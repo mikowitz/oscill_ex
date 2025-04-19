@@ -21,6 +21,8 @@ defmodule OscillEx.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
+      {:credo, "~> 1.7.12", only: [:test]},
+      {:ex_doc, "~> 0.37.3"},
       {:mix_test_watch, "~> 1.2.0", only: [:test]}
     ]
   end
