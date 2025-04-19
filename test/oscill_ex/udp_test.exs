@@ -12,7 +12,6 @@ defmodule OscillEx.UdpTest do
         |> Udp.open()
 
       assert is_port(u.socket)
-      assert is_function(u.send_fn, 1)
     end
 
     test "errors when trying to open socket without sufficient configuration" do
@@ -28,6 +27,23 @@ defmodule OscillEx.UdpTest do
         |> Udp.open()
 
       assert u.host == "localhost"
+    end
+  end
+
+  describe "closing" do
+    test "closing a connection removes the socket" do
+      {:ok, u} =
+        Udp.new()
+        |> Udp.with_host("example.com")
+        |> Udp.with_port(7001)
+        |> Udp.open()
+
+      socket = u.socket
+      refute is_nil(Port.info(socket))
+      {:ok, u} = Udp.close(u)
+
+      assert is_nil(u.socket)
+      assert is_nil(Port.info(socket))
     end
   end
 
