@@ -39,6 +39,9 @@ defmodule OscillEx.Udp do
   This will close the socket and unassign it from the returned struct.
   """
 
+  alias OscillEx.Osc.Message.Parser
+  alias OscillEx.Osc.Message
+
   defstruct [:port, :socket, host: "localhost", read_responses: false]
 
   @type t :: %__MODULE__{
@@ -70,6 +73,11 @@ defmodule OscillEx.Udp do
 
   def open(_), do: {:error, "cannot open UDP socket"}
 
+  def send(%__MODULE__{} = udp, %Message{} = message) do
+    message = Message.to_osc(message)
+    __MODULE__.send(udp, message)
+  end
+
   def send(
         %__MODULE__{host: host, port: port, read_responses: read_responses, socket: socket},
         message
@@ -79,7 +87,7 @@ defmodule OscillEx.Udp do
 
     if read_responses do
       case :gen_udp.recv(socket, 0, 100) do
-        {:ok, {_, _, packet}} -> {:ok, packet}
+        {:ok, {_, _, packet}} -> Parser.parse(packet)
         other -> other
       end
     else

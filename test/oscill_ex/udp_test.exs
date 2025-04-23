@@ -1,6 +1,8 @@
 defmodule OscillEx.UdpTest do
   use ExUnit.Case, async: true
 
+  alias EarmarkParser.Message
+  alias OscillEx.Osc.Message
   alias OscillEx.Udp
 
   describe "building" do
@@ -48,6 +50,17 @@ defmodule OscillEx.UdpTest do
   end
 
   describe "sending messages" do
+    test "sending an `OscillEx.Osc.Message" do
+      {:ok, u} =
+        Udp.new()
+        |> Udp.with_port(7001)
+        |> Udp.open()
+
+      message = Message.new("/info", [1, 2, 3])
+
+      assert :ok = Udp.send(u, message)
+    end
+
     test "when no response is expected" do
       {:ok, u} =
         Udp.new()
@@ -62,7 +75,14 @@ defmodule OscillEx.UdpTest do
 
       spawn(fn ->
         {:ok, {_, port, message}} = :gen_udp.recv(receiver, 0)
-        :gen_udp.send(receiver, ~c'localhost', port, "received #{message}")
+        message_padding = 4 - rem(String.length(message), 4)
+
+        :gen_udp.send(
+          receiver,
+          ~c'localhost',
+          port,
+          <<"/received", 0, 0, 0, ",s", 0, 0, message::binary, 0::size(message_padding * 8)>>
+        )
       end)
 
       {:ok, u} =
@@ -71,7 +91,9 @@ defmodule OscillEx.UdpTest do
         |> Udp.with_responses()
         |> Udp.open()
 
-      assert {:ok, "received hello"} = Udp.send(u, "hello")
+      {:ok, message} = Udp.send(u, "hello")
+
+      assert message == Message.new("/received", ["hello"])
     end
 
     test "when waiting for a response times out" do
