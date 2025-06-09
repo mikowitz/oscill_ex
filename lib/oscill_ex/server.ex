@@ -55,6 +55,12 @@ defmodule OscillEx.Server do
     end
   end
 
+  @impl true
+  def handle_info({port, {:data, message}}, %__MODULE__{scsynth_port: port} = state) do
+    Logger.info(String.trim(message))
+    {:noreply, state}
+  end
+
   @behaviour OscillEx.PortHelper
   @impl true
   defdelegate find_executable(path), to: System
