@@ -26,7 +26,7 @@ defmodule OscillEx.ServerTest do
   describe "start/1" do
     test "reads the executable path from passed-in options" do
       capture_log(fn ->
-        {:ok, pid} = Server.start(scsynth_executable: "/my/custom/executable")
+        {:ok, pid} = Server.start_link(scsynth_executable: "/my/custom/executable")
 
         assert pid == Process.whereis(Server)
 
@@ -40,7 +40,7 @@ defmodule OscillEx.ServerTest do
       Application.put_env(:oscill_ex, :scsynth_executable, "/my/config/executable")
 
       capture_log(fn ->
-        {:ok, pid} = Server.start()
+        {:ok, pid} = Server.start_link()
 
         assert pid == Process.whereis(Server)
 
@@ -56,7 +56,7 @@ defmodule OscillEx.ServerTest do
 
     test "falls back to `scsynth` for the executable path" do
       capture_log(fn ->
-        {:ok, pid} = Server.start()
+        {:ok, pid} = Server.start_link()
 
         assert pid == Process.whereis(Server)
 
@@ -69,7 +69,7 @@ defmodule OscillEx.ServerTest do
     test "server fails to start when executable cannot be found" do
       stub(OscillEx.MockPortHelper, :find_executable, fn _ -> nil end)
       Process.flag(:trap_exit, true)
-      assert {:error, :missing_scsynth_executable} = Server.start()
+      assert {:error, :missing_scsynth_executable} = Server.start_link()
 
       on_exit(fn ->
         Process.flag(:trap_exit, false)
@@ -78,7 +78,7 @@ defmodule OscillEx.ServerTest do
 
     test "opens a port running the scsynth executable" do
       capture_log(fn ->
-        {:ok, _} = Server.start()
+        {:ok, _} = Server.start_link()
 
         state = :sys.get_state(Server)
 
@@ -90,13 +90,13 @@ defmodule OscillEx.ServerTest do
 
     test "logs the running executable" do
       assert capture_log(fn ->
-               {:ok, _} = Server.start()
+               {:ok, _} = Server.start_link()
              end) =~ ~r/Server started with.*scsynth -u 57110/
     end
 
     test "can specify the port to run the server on" do
       assert capture_log(fn ->
-               {:ok, _} = Server.start(server_config: [port: 57123])
+               {:ok, _} = Server.start_link(server_config: [port: 57123])
                state = :sys.get_state(Server)
                assert state.server_config[:port] == 57123
              end) =~ ~r/Server started with.*scsynth -u 57123/
@@ -107,7 +107,7 @@ defmodule OscillEx.ServerTest do
 
       Process.flag(:trap_exit, true)
 
-      assert {:error, :could_not_start_scsynth} = Server.start()
+      assert {:error, :could_not_start_scsynth} = Server.start_link()
 
       on_exit(fn ->
         Process.flag(:trap_exit, false)

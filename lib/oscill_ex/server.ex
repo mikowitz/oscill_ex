@@ -12,7 +12,7 @@ defmodule OscillEx.Server do
     :server_config
   ]
 
-  def start(opts \\ []) do
+  def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: Keyword.get(opts, :server_name, __MODULE__))
   end
 
@@ -83,5 +83,15 @@ defmodule OscillEx.Server do
         "scsynth"
       )
     )
+  end
+
+  def child_spec(opts) do
+    %{
+      id: __MODULE__,
+      start: {__MODULE__, :start_link, [opts]},
+      type: :worker,
+      restart: :permanent,
+      shutdown: 5000
+    }
   end
 end
