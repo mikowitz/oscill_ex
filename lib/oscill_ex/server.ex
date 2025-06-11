@@ -1,8 +1,13 @@
 defmodule OscillEx.Server do
+  @moduledoc """
+  Manages running an `scsynth` process that can receive OSC messages.
+  """
+
   use GenServer
 
   require Logger
 
+  # credo:disable-for-next-line
   @default_port 57110
 
   defstruct [
