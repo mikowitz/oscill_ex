@@ -2,6 +2,7 @@
 defmodule OscillEx.ServerTest do
   use ExUnit.Case, async: false
   import ExUnit.CaptureLog
+  import ExUnit.CaptureIO
 
   alias OscillEx.Server
 
@@ -27,18 +28,18 @@ defmodule OscillEx.ServerTest do
   describe "start/1" do
     test "reads the executable path from passed-in options" do
       capture_log(fn ->
-        {:ok, pid} = Server.start_link(scsynth_executable: "/my/custom/executable")
+        {:ok, pid} = Server.start_link(server_config: [executable: "/my/custom/executable"])
 
         assert pid == Process.whereis(Server)
 
         state = :sys.get_state(Server)
 
-        assert state.scsynth_executable == "/my/custom/executable"
+        assert state.server_config.executable == "/my/custom/executable"
       end)
     end
 
     test "falls back to reading executable path from config" do
-      Application.put_env(:oscill_ex, :scsynth_executable, "/my/config/executable")
+      Application.put_env(:oscill_ex, :executable, "/my/config/executable")
 
       capture_log(fn ->
         {:ok, pid} = Server.start_link()
@@ -47,11 +48,11 @@ defmodule OscillEx.ServerTest do
 
         state = :sys.get_state(Server)
 
-        assert state.scsynth_executable == "/my/config/executable"
+        assert state.server_config.executable == "/my/config/executable"
       end)
 
       on_exit(fn ->
-        Application.delete_env(:oscill_ex, :scsynth_executable)
+        Application.delete_env(:oscill_ex, :executable)
       end)
     end
 
@@ -63,14 +64,17 @@ defmodule OscillEx.ServerTest do
 
         state = :sys.get_state(Server)
 
-        assert state.scsynth_executable == "scsynth"
+        assert state.server_config.executable == "scsynth"
       end)
     end
 
     test "server fails to start when executable cannot be found" do
       stub(OscillEx.MockPortHelper, :find_executable, fn _ -> nil end)
-      Process.flag(:trap_exit, true)
-      assert {:error, :missing_scsynth_executable} = Server.start_link()
+
+      assert capture_log(fn ->
+               Process.flag(:trap_exit, true)
+               assert {:error, :missing_scsynth_executable} = Server.start_link()
+             end) =~ "Could not find executable `scsynth`"
 
       on_exit(fn ->
         Process.flag(:trap_exit, false)
@@ -99,16 +103,32 @@ defmodule OscillEx.ServerTest do
       assert capture_log(fn ->
                {:ok, _} = Server.start_link(server_config: [port: 57123])
                state = :sys.get_state(Server)
-               assert state.server_config[:port] == 57123
+               assert state.server_config.port == 57123
              end) =~ ~r/Server started with.*scsynth -u 57123/
     end
 
+    test "can specify the port to run the server via config" do
+      Application.put_env(:oscill_ex, :port, 57144)
+
+      assert capture_log(fn ->
+               {:ok, _} = Server.start_link()
+               state = :sys.get_state(Server)
+               assert state.server_config.port == 57144
+             end) =~ ~r/Server started with.*scsynth -u 57144/
+
+      on_exit(fn ->
+        Application.delete_env(:oscill_ex, :port)
+      end)
+    end
+
     test "server exits when the scsynth executable cannot be started" do
-      stub(OscillEx.MockPortHelper, :info, fn _name -> nil end)
+      assert capture_log(fn ->
+               stub(OscillEx.MockPortHelper, :info, fn _name -> nil end)
 
-      Process.flag(:trap_exit, true)
+               Process.flag(:trap_exit, true)
 
-      assert {:error, :could_not_start_scsynth} = Server.start_link()
+               assert {:error, :could_not_start_scsynth} = Server.start_link()
+             end) =~ "Could not start `scsynth -u 57110`"
 
       on_exit(fn ->
         Process.flag(:trap_exit, false)
