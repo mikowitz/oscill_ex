@@ -2,7 +2,6 @@
 defmodule OscillEx.ServerTest do
   use ExUnit.Case, async: false
   import ExUnit.CaptureLog
-  import ExUnit.CaptureIO
 
   alias OscillEx.Server
 

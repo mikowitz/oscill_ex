@@ -2,7 +2,6 @@ defmodule OscillEx.Server do
   @moduledoc """
   Manages running an `scsynth` process that can receive OSC messages.
   """
-
   use GenServer
 
   require Logger
@@ -85,14 +84,15 @@ defmodule OscillEx.Server do
     Keyword.get(config, key, Application.get_env(:oscill_ex, key, default))
   end
 
-  defp start_scsynth_port(%{executable: executable, port: port}) do
-    command_to_run = "#{executable} -u #{port}"
+  defp start_scsynth_port(%__MODULE__.Config{} = server_config) do
+    command_to_run = __MODULE__.Config.command(server_config)
+    command_args = __MODULE__.Config.command_args(server_config)
     Logger.info("Server starting with #{command_to_run}")
 
     scsynth_port =
       port_helper().open(
         {:spawn_executable, "./bin/scsynth_wrapper"},
-        [:binary, args: [executable, "-u", to_string(port)]]
+        [:binary, args: command_args]
       )
 
     case port_helper().info(scsynth_port) do
