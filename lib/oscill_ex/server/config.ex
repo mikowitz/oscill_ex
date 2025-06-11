@@ -1,4 +1,3 @@
-# credo:disable-for-this-file Credo.Check.Readability.LargeNumbers
 defmodule OscillEx.Server.Config do
   @moduledoc """
   Configuration for the `scsynth` process server

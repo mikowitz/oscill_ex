@@ -1,4 +1,3 @@
-# credo:disable-for-this-file Credo.Check.Readability.LargeNumbers
 defmodule OscillEx.Server.ConfigTest do
   use ExUnit.Case, async: true
 
