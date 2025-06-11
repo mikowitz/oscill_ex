@@ -6,9 +6,6 @@ defmodule OscillEx.Server do
 
   require Logger
 
-  # credo:disable-for-next-line Credo.Check.Readability.LargeNumbers
-  @default_port 57110
-
   defstruct [
     :scsynth_port,
     :scsynth_port_monitor,
@@ -23,19 +20,8 @@ defmodule OscillEx.Server do
   def init(opts) do
     raw_server_config = Keyword.get(opts, :server_config, [])
 
-    path = lookup_server_config_value(:executable, raw_server_config, "scsynth")
-
-    case port_helper().find_executable(path) do
-      nil ->
-        Logger.error("Could not find executable `#{path}`")
-        {:stop, :missing_scsynth_executable}
-
-      executable ->
-        server_config = %__MODULE__.Config{
-          port: lookup_server_config_value(:port, raw_server_config, @default_port),
-          executable: executable
-        }
-
+    case __MODULE__.Config.build(raw_server_config) do
+      {:ok, server_config} ->
         case start_scsynth_port(server_config) do
           {:ok, port, monitor} ->
             {:ok,
@@ -48,6 +34,10 @@ defmodule OscillEx.Server do
           _ ->
             {:stop, :could_not_start_scsynth}
         end
+
+      {:error, {:missing_executable, path}} ->
+        Logger.error("Could not find executable `#{path}`")
+        {:stop, :missing_scsynth_executable}
     end
   end
 
@@ -78,10 +68,6 @@ defmodule OscillEx.Server do
   def handle_info(msg, state) do
     Logger.debug("Unexpected message: #{inspect(msg)}")
     {:noreply, state}
-  end
-
-  defp lookup_server_config_value(key, config, default) do
-    Keyword.get(config, key, Application.get_env(:oscill_ex, key, default))
   end
 
   defp start_scsynth_port(%__MODULE__.Config{} = server_config) do
@@ -118,15 +104,7 @@ defmodule OscillEx.Server do
     }
   end
 
-  @behaviour OscillEx.PortHelper
-  @impl true
-  defdelegate find_executable(path), to: System
-  @impl true
-  defdelegate open(port, options), to: Port
-  @impl true
-  defdelegate info(port), to: Port
-
   defp port_helper do
-    Application.get_env(:oscill_ex, :port_helper, __MODULE__)
+    Application.get_env(:oscill_ex, :port_helper, OscillEx.SystemPortHelper)
   end
 end
