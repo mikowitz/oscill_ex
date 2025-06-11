@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 
+# SEE: https://hexdocs.pm/elixir/1.19.0-rc.0/Port.html#module-orphan-operating-system-processes
+
+# Silence warnings
+exec >/dev/null 2>&1
+
 # Start the program in the background
 exec "$@" &
 pid1=$!
-
-# Silence warnings from here on
-exec >/dev/null 2>&1
 
 # Read from stdin in the background and
 # kill running program when stdin closes

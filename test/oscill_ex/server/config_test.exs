@@ -48,4 +48,12 @@ defmodule OscillEx.Server.ConfigTest do
       assert config.protocol == :udp
     end
   end
+
+  describe "command_list/1" do
+    test "returns the generated command based on the configured parameters" do
+      {:ok, config} = Config.build(executable: "/my/custom/scsynth", port: 75234)
+
+      assert Config.command_list(config) == ["/my/custom/scsynth", "-u", "75234"]
+    end
+  end
 end

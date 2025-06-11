@@ -1,27 +1,14 @@
 defmodule OscillEx.ScsynthProcessTest do
   use ExUnit.Case, async: true
   import ExUnit.CaptureLog
+  import OscillEx.TestHelpers
 
   alias OscillEx.ScsynthProcess
   alias OscillEx.Server.Config
 
   import Mox
   setup :verify_on_exit!
-
-  setup do
-    stub(OscillEx.MockPortHelper, :find_executable, &Function.identity/1)
-
-    stub(OscillEx.MockPortHelper, :open, fn _name, _opts ->
-      Port.open({:spawn_executable, "./bin/scsynth_wrapper"}, [
-        :binary,
-        args: ["./bin/dummy_scsynth"]
-      ])
-    end)
-
-    stub(OscillEx.MockPortHelper, :info, fn _port -> [] end)
-
-    :ok
-  end
+  setup :setup_mock_port_helper
 
   describe "start/1" do
     test "when the port starts" do
@@ -44,11 +31,12 @@ defmodule OscillEx.ScsynthProcessTest do
       logs =
         capture_log(fn ->
           {:ok, config} = Config.build(executable: "myexec", port: 3510)
+
           assert ScsynthProcess.start(config) == {:error, :could_not_start_scsynth}
         end)
 
       assert logs =~ "Server starting with"
-      assert logs =~ "Could not start `myexec"
+      assert logs =~ "Could not start server with `myexec"
     end
   end
 

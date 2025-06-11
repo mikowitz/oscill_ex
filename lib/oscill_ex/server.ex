@@ -4,13 +4,26 @@ defmodule OscillEx.Server do
   """
   use GenServer
 
-  require Logger
-
+  alias OscillEx.Logger
   alias OscillEx.ScsynthProcess
+  alias OscillEx.Server.Config
+
+  @typedoc """
+  Process state for the server 
+
+  * `:scsynth_port` - the `Port` representing the running `scsynth` process 
+  * `:scsynth_monitor` - the `Reference` pointing to the process's monitor
+  * `:server_config` - a `Config` struct holding the configuration options for the process
+  """
+  @type t :: %__MODULE__{
+          scsynth_port: port() | nil,
+          scsynth_monitor: reference() | nil,
+          server_config: Config.t() | nil
+        }
 
   defstruct [
     :scsynth_port,
-    :scsynth_port_monitor,
+    :scsynth_monitor,
     :server_config
   ]
 
@@ -22,58 +35,47 @@ defmodule OscillEx.Server do
   def init(opts) do
     raw_server_config = Keyword.get(opts, :server_config, [])
 
-    with {:ok, config} <- __MODULE__.Config.build(raw_server_config),
+    with {:ok, config} <- Config.build(raw_server_config),
          {:ok, port, monitor} <- ScsynthProcess.start(config) do
       {:ok,
        %__MODULE__{
          scsynth_port: port,
-         scsynth_port_monitor: monitor,
+         scsynth_monitor: monitor,
          server_config: config
        }}
     else
-      {:error, {:missing_executable, path}} ->
-        Logger.error("Could not find executable `#{path}`")
-        {:stop, :missing_scsynth_executable}
-
-      {:error, reason} ->
-        {:stop, reason}
+      {:error, reason} -> {:stop, reason}
     end
   end
 
   @impl true
   def handle_info({port, {:data, message}}, %__MODULE__{scsynth_port: port} = state) do
-    Logger.info(String.trim(message))
+    Logger.unexpected_message(message)
     {:noreply, state}
   end
 
-  def handle_info(
-        {:DOWN, _, :port, port, reason},
-        %__MODULE__{scsynth_port: port, server_config: config, scsynth_port_monitor: monitor} =
-          state
-      ) do
-    Logger.warning("scsynth server stopped: #{inspect(reason)}. Attempting to restart")
-    Port.demonitor(state.scsynth_port_monitor)
+  def handle_info({:DOWN, _, :port, port, reason}, %__MODULE__{scsynth_port: port} = state) do
+    Logger.server_stopped(reason)
 
-    case ScsynthProcess.restart(config, monitor) do
+    case ScsynthProcess.restart(state.server_config, state.scsynth_monitor) do
       {:ok, new_port, new_monitor} ->
         {:noreply,
          %__MODULE__{
            state
            | scsynth_port: new_port,
-             scsynth_port_monitor: new_monitor
+             scsynth_monitor: new_monitor
          }}
 
       {:error, reason} ->
-        {:stop, reason}
+        {:stop, reason, state}
     end
   end
 
-  def handle_info(msg, state) do
-    Logger.debug("Unexpected message: #{inspect(msg)}")
+  def handle_info(_msg, state) do
     {:noreply, state}
   end
 
-  def child_spec(opts) do
+  def child_spec(opts \\ []) do
     %{
       id: __MODULE__,
       start: {__MODULE__, :start_link, [opts]},
