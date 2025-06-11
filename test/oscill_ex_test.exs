@@ -32,6 +32,11 @@ defmodule OscillExTest do
         [{_, pid, _, _}] = Supervisor.which_children(OscillEx.Supervisor)
         assert pid == server_pid
 
+        %{scsynth_port: port} = :sys.get_state(server_pid)
+
+        assert is_port(port)
+        refute is_nil(Port.info(port))
+
         GenServer.stop(IntegrationTest)
       end)
     end
