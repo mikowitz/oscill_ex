@@ -31,6 +31,24 @@ defmodule OscillEx.UDPTransportTest do
     end
   end
 
+  describe "send_message/4" do
+    test "encodes the OSC address and params and sends them to the specified port" do
+      {:ok, target} = :gen_udp.open(0)
+      {:ok, target_port} = :inet.port(target)
+
+      {:ok, transport} = UDPTransport.start_link()
+
+      :ok = UDPTransport.send_message(transport, target_port, "/hello", [1, "ok"])
+
+      receive do
+        {:udp, ^target, _, _, msg} ->
+          assert to_string(msg) == <<"/hello", 0, 0, ",is", 0, 0, 0, 0, 1, "ok", 0, 0>>
+      end
+
+      :ok = :gen_udp.close(target)
+    end
+  end
+
   describe "shutdown" do
     test "closes the port when the GenServer process is terminated" do
       {:ok, transport} = UDPTransport.start_link()

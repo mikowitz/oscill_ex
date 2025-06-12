@@ -24,6 +24,7 @@ defmodule OscillEx.MixProject do
   defp deps do
     [
       {:credo, "~> 1.7.12", only: [:test], runtime: false},
+      {:ex_doc, "~> 0.38.2"},
       {:mix_test_watch, "~> 1.2.0", only: [:test], runtime: false},
       {:mox, "~> 1.2.0", only: [:test]}
     ]

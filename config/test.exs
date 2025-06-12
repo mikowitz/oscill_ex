@@ -3,5 +3,6 @@ import Config
 config :mix_test_watch,
   tasks: [
     "test",
-    "credo --strict"
+    "credo --strict",
+    "docs"
   ]
