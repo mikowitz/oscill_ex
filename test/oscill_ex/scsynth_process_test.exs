@@ -26,7 +26,7 @@ defmodule OscillEx.ScsynthProcessTest do
     end
 
     test "when the port fails to start" do
-      stub(OscillEx.MockPortHelper, :info, fn _ -> nil end)
+      stub_erroring_executable()
 
       logs =
         capture_log(fn ->
