@@ -9,43 +9,69 @@ defmodule OscillEx.Server do
   alias OscillEx.Server.Config
 
   @typedoc """
-  Process state for the server 
+  Process state for the server
 
-  * `:scsynth_port` - the `Port` representing the running `scsynth` process 
+  * `:scsynth_port` - the `Port` representing the running `scsynth` process
   * `:scsynth_monitor` - the `Reference` pointing to the process's monitor
   * `:server_config` - a `Config` struct holding the configuration options for the process
+  * `:transport` - the transport layer implementation for sending messages to the `scsynth` process
   """
   @type t :: %__MODULE__{
           scsynth_port: port() | nil,
           scsynth_monitor: reference() | nil,
-          server_config: Config.t() | nil
+          server_config: Config.t() | nil,
+          transport: {atom(), pid()}
         }
 
   defstruct [
     :scsynth_port,
     :scsynth_monitor,
-    :server_config
+    :server_config,
+    :transport
   ]
 
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: Keyword.get(opts, :server_name, __MODULE__))
   end
 
+  def send(message) do
+    GenServer.cast(__MODULE__, {:send, message})
+  end
+
   @impl true
   def init(opts) do
     raw_server_config = Keyword.get(opts, :server_config, [])
 
+    transport =
+      Keyword.get(
+        opts,
+        :transport,
+        Application.get_env(:oscill_ex, :transport, OscillEx.UDPTransport)
+      )
+
     with {:ok, config} <- Config.build(raw_server_config),
          {:ok, port, monitor} <- ScsynthProcess.start(config) do
+      {:ok, transport_pid} = transport.start_link()
+
       {:ok,
        %__MODULE__{
          scsynth_port: port,
          scsynth_monitor: monitor,
-         server_config: config
+         server_config: config,
+         transport: {transport, transport_pid}
        }}
     else
       {:error, reason} -> {:stop, reason}
     end
+  end
+
+  @impl GenServer
+  def handle_cast(
+        {:send, message},
+        %__MODULE__{server_config: config, transport: {mod, pid}} = state
+      ) do
+    mod.send(pid, config.port, message)
+    {:noreply, state}
   end
 
   @impl true

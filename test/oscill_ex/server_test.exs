@@ -37,4 +37,16 @@ defmodule OscillEx.ServerTest do
       end)
     end
   end
+
+  describe "send/1" do
+    test "sends a message via the configured transport layer" do
+      Server.start_link(transport: OscillEx.MockTransport)
+
+      Server.send("hello")
+
+      :timer.sleep(10)
+
+      assert {57110, "hello"} in OscillEx.MockTransport.get_messages()
+    end
+  end
 end
