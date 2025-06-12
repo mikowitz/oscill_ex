@@ -9,10 +9,12 @@ defmodule OscillEx.Server.ConfigTest do
   setup :setup_mock_port_helper
 
   def stub_env_var(key, value) do
-    Application.put_env(:oscill_ex, key, value)
+    config = Application.get_env(:oscill_ex, :server_config, [])
+    config = Keyword.put(config, key, value)
+    Application.put_env(:oscill_ex, :server_config, config)
 
     on_exit(fn ->
-      Application.delete_env(:oscill_ex, key)
+      Application.delete_env(:oscill_ex, :server_config)
     end)
   end
 
