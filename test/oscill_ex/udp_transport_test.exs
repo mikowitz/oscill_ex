@@ -34,7 +34,6 @@ defmodule OscillEx.UDPTransportTest do
   describe "shutdown" do
     test "closes the port when the GenServer process is terminated" do
       {:ok, transport} = UDPTransport.start_link()
-
       %{socket: socket} = :sys.get_state(transport)
 
       refute is_nil(Port.info(socket))
