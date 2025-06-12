@@ -34,6 +34,10 @@ defmodule OscillEx.Server do
     GenServer.start_link(__MODULE__, opts, name: Keyword.get(opts, :server_name, __MODULE__))
   end
 
+  def send_message(address, params) do
+    GenServer.cast(__MODULE__, {:send, address, params})
+  end
+
   def send(message) do
     GenServer.cast(__MODULE__, {:send, message})
   end
@@ -71,6 +75,15 @@ defmodule OscillEx.Server do
         %__MODULE__{server_config: config, transport: {mod, pid}} = state
       ) do
     mod.send(pid, config.port, message)
+    {:noreply, state}
+  end
+
+  @impl GenServer
+  def handle_cast(
+        {:send, address, params},
+        %__MODULE__{server_config: config, transport: {mod, pid}} = state
+      ) do
+    mod.send_message(pid, config.port, address, params)
     {:noreply, state}
   end
 

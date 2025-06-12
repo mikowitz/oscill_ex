@@ -38,6 +38,20 @@ defmodule OscillEx.ServerTest do
     end
   end
 
+  describe "send_message/2" do
+    test "sends an OSC-encoded message via the configured transport layer" do
+      Server.start_link(transport: OscillEx.MockTransport)
+
+      Server.send_message("/hello", ["in", 1, "out", 7.5])
+
+      :timer.sleep(10)
+
+      assert {57110,
+              <<"/hello", 0, 0, ",sisf", 0, 0, 0, "in", 0, 0, 0, 0, 0, 1, "out", 0, 64, 240, 0,
+                0>>} in OscillEx.MockTransport.get_messages()
+    end
+  end
+
   describe "send/1" do
     test "sends a message via the configured transport layer" do
       Server.start_link(transport: OscillEx.MockTransport)

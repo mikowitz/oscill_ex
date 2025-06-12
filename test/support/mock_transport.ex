@@ -1,13 +1,20 @@
 defmodule OscillEx.MockTransport do
   @moduledoc false
-  @behaviour OscillEx.Transport
+  alias OscillEx.OSC
 
+  @behaviour OscillEx.Transport
   use GenServer
 
   defstruct messages: []
 
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
+  end
+
+  @impl OscillEx.Transport
+  def send_message(transport, port, address, arguments) do
+    message = OSC.encode_message(address, arguments)
+    send(transport, port, message)
   end
 
   @impl OscillEx.Transport
