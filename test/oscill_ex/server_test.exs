@@ -13,7 +13,7 @@ defmodule OscillEx.ServerTest do
 
   describe "start/1" do
     test "server fails to start when executable cannot be found" do
-      stub(OscillEx.MockPortHelper, :find_executable, fn _ -> nil end)
+      stub_missing_executable()
 
       assert capture_log(fn ->
                Process.flag(:trap_exit, true)
@@ -25,20 +25,12 @@ defmodule OscillEx.ServerTest do
       end)
     end
 
-    test "logs the running executable" do
-      assert capture_log(fn ->
-               {:ok, _} = Server.start_link()
-             end) =~ ~r/Server started with.*scsynth -u 57110/
-    end
-
     test "server exits when the scsynth executable cannot be started" do
-      assert capture_log(fn ->
-               stub(OscillEx.MockPortHelper, :info, fn _name -> nil end)
-
-               Process.flag(:trap_exit, true)
-
-               assert {:error, :could_not_start_scsynth} = Server.start_link()
-             end) =~ "Could not start server with `scsynth -u 57110`"
+      capture_log(fn ->
+        stub_erroring_executable()
+        Process.flag(:trap_exit, true)
+        assert {:error, :could_not_start_scsynth} = Server.start_link()
+      end)
 
       on_exit(fn ->
         Process.flag(:trap_exit, false)

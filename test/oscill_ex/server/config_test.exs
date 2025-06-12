@@ -1,15 +1,19 @@
 defmodule OscillEx.Server.ConfigTest do
   use ExUnit.Case, async: true
+  import OscillEx.TestHelpers
 
   alias OscillEx.Server.Config
 
   import Mox
   setup :verify_on_exit!
+  setup :setup_mock_port_helper
 
-  setup do
-    stub(OscillEx.MockPortHelper, :find_executable, &Function.identity/1)
+  def stub_env_var(key, value) do
+    Application.put_env(:oscill_ex, key, value)
 
-    :ok
+    on_exit(fn ->
+      Application.delete_env(:oscill_ex, key)
+    end)
   end
 
   describe "build/1" do
@@ -22,21 +26,15 @@ defmodule OscillEx.Server.ConfigTest do
     end
 
     test "falls back to Application env" do
-      Application.put_env(:oscill_ex, :protocol, :tcp)
-      Application.put_env(:oscill_ex, :executable, "/my/env/scsynth")
-      Application.put_env(:oscill_ex, :port, 10222)
+      stub_env_var(:protocol, :tcp)
+      stub_env_var(:executable, "/my/env/scsynth")
+      stub_env_var(:port, 10222)
 
       {:ok, config} = Config.build()
 
       assert config.executable == "/my/env/scsynth"
       assert config.port == 10222
       assert config.protocol == :tcp
-
-      on_exit(fn ->
-        Application.delete_env(:oscill_ex, :protocol)
-        Application.delete_env(:oscill_ex, :executable)
-        Application.delete_env(:oscill_ex, :port)
-      end)
     end
 
     test "falls back to provided defaults" do
@@ -45,6 +43,12 @@ defmodule OscillEx.Server.ConfigTest do
       assert config.executable == "scsynth"
       assert config.port == 57110
       assert config.protocol == :udp
+    end
+
+    test "logs and returns an error if the executable cannot be found" do
+      stub_missing_executable()
+
+      assert {:error, :missing_scsynth_executable} == Config.build()
     end
   end
 
