@@ -38,14 +38,20 @@ defmodule OscillEx.Server do
   Starts the `scsynth` server
   """
   def boot(opts \\ []) do
-    start_link(opts)
+    case Process.whereis(__MODULE__) do
+      nil -> start_link(opts)
+      _ -> Logger.server_running()
+    end
   end
 
   @doc """
   Stops the `scsynth` server
   """
   def quit do
-    send_message("/quit")
+    case Process.whereis(__MODULE__) do
+      nil -> Logger.server_not_started()
+      _ -> send_message("/quit")
+    end
   end
 
   def send_message(address, params \\ []) do

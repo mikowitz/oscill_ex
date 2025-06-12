@@ -9,4 +9,6 @@ defmodule OscillEx.Logger do
   def server_quit, do: Logger.info("`scsynth` server quit")
   def missing_executable(path), do: Logger.error("Could not find executable `#{path}`")
   def udp(msg), do: Logger.info(inspect(to_string(msg)))
+  def server_not_started, do: Logger.warning("`scsynth` server is not running")
+  def server_running, do: Logger.warning("`scsynth` server is already running")
 end
