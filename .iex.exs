@@ -1,3 +1,2 @@
 alias OscillEx.Server
-
-path = "/Applications/SuperCollider.app/Contents/Resources/scsynth"
+Mix.ensure_application!(:observer)

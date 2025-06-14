@@ -34,7 +34,27 @@ defmodule OscillEx.Server do
     GenServer.start_link(__MODULE__, opts, name: Keyword.get(opts, :server_name, __MODULE__))
   end
 
-  def send_message(address, params) do
+  @doc """
+  Starts the `scsynth` server
+  """
+  def boot(opts \\ []) do
+    case Process.whereis(__MODULE__) do
+      nil -> start_link(opts)
+      _ -> Logger.server_running()
+    end
+  end
+
+  @doc """
+  Stops the `scsynth` server
+  """
+  def quit do
+    case Process.whereis(__MODULE__) do
+      nil -> Logger.server_not_started()
+      _ -> send_message("/quit")
+    end
+  end
+
+  def send_message(address, params \\ []) do
     GenServer.cast(__MODULE__, {:send, address, params})
   end
 
@@ -87,31 +107,21 @@ defmodule OscillEx.Server do
     {:noreply, state}
   end
 
-  @impl true
-  def handle_info({port, {:data, message}}, %__MODULE__{scsynth_port: port} = state) do
-    Logger.unexpected_message(message)
-    {:noreply, state}
-  end
-
+  @impl GenServer
   def handle_info({:DOWN, _, :port, port, reason}, %__MODULE__{scsynth_port: port} = state) do
-    Logger.server_stopped(reason)
-
-    case ScsynthProcess.restart(state.server_config, state.scsynth_monitor) do
-      {:ok, new_port, new_monitor} ->
-        {:noreply,
-         %__MODULE__{
-           state
-           | scsynth_port: new_port,
-             scsynth_monitor: new_monitor
-         }}
-
-      {:error, reason} ->
-        {:stop, reason, state}
-    end
+    {:stop, reason, state}
   end
 
-  def handle_info(_msg, state) do
+  def handle_info({port, {:data, message}}, %__MODULE__{scsynth_port: port} = state) do
+    Logger.stdout(message)
     {:noreply, state}
+  end
+
+  @impl GenServer
+  def terminate(reason, %__MODULE__{transport: {_, transport}} = state) do
+    Port.demonitor(state.scsynth_monitor)
+    send(transport, {:quit, reason})
+    Logger.server_quit()
   end
 
   def child_spec(opts \\ []) do

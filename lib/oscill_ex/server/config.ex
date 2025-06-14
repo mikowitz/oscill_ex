@@ -68,7 +68,11 @@ defmodule OscillEx.Server.Config do
   end
 
   defp lookup_config_value(key, config, default) do
-    Keyword.get(config, key, Application.get_env(:oscill_ex, key, default))
+    Keyword.get(config, key, Keyword.get(server_config_from_application(), key, default))
+  end
+
+  defp server_config_from_application do
+    Application.get_env(:oscill_ex, :server_config, [])
   end
 
   def validate_executable(path) do

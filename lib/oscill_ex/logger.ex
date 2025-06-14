@@ -6,7 +6,10 @@ defmodule OscillEx.Logger do
   def server_starting(command), do: Logger.info("Server starting with `#{command}`")
   def server_started(command), do: Logger.info("Server started with `#{command}`")
   def server_start_failed(command), do: Logger.error("Could not start server with `#{command}`")
-  def server_stopped(reason), do: Logger.warning("scsynth server stopped with #{inspect(reason)}")
+  def server_quit, do: Logger.info("`scsynth` server quit")
   def missing_executable(path), do: Logger.error("Could not find executable `#{path}`")
-  def unexpected_message(msg), do: Logger.debug("Unexpected message: #{String.trim(msg)}")
+  def udp(msg), do: Logger.info("udp: " <> inspect(to_string(msg)))
+  def stdout(msg), do: Logger.info("stdout: " <> inspect(to_string(msg)))
+  def server_not_started, do: Logger.warning("`scsynth` server is not running")
+  def server_running, do: Logger.warning("`scsynth` server is already running")
 end

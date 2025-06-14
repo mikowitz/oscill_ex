@@ -2,6 +2,7 @@ defmodule OscillEx.UDPTransport do
   @moduledoc """
   Implementation of the generic `Transport` for `udp`
   """
+  alias OscillEx.Logger
   alias OscillEx.OSC
 
   @behaviour OscillEx.Transport
@@ -34,6 +35,16 @@ defmodule OscillEx.UDPTransport do
   def handle_cast({:send, port, message}, %__MODULE__{socket: sock} = state) do
     :ok = :gen_udp.send(sock, {127, 0, 0, 1}, port, message)
     {:noreply, state}
+  end
+
+  @impl GenServer
+  def handle_info({:udp, _, _, _, message}, state) do
+    Logger.udp(message)
+    {:noreply, state}
+  end
+
+  def handle_info({:quit, reason}, state) do
+    {:stop, reason, state}
   end
 
   @impl GenServer
