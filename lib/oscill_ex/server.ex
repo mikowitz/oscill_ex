@@ -1,4 +1,8 @@
 defmodule OscillEx.Server do
+  @moduledoc """
+  Manages a port running a configurable instance of `scsynth`
+  """
+
   use GenServer
 
   @type state :: %{
@@ -91,61 +95,43 @@ defmodule OscillEx.Server do
   end
 
   def handle_call(:quit, _, %{port: port} = state) when is_port(port) do
-    Port.demonitor(state.monitor, [:flush])
-    Port.close(port)
-
-    {:reply, :ok, %{state | port: nil, monitor: nil, status: :stopped}}
+    new_state = close_port(state) |> set_status(:stopped)
+    {:reply, :ok, new_state}
   end
 
   @impl GenServer
   def handle_info({port, {:exit_status, exit_code}}, %{port: port} = state) do
-    Port.demonitor(state.monitor, [:flush])
+    new_state = close_port(state)
 
     case exit_code do
       0 ->
-        {:noreply, %{state | port: nil, monitor: nil, status: :stopped}}
+        {:noreply, set_status(new_state, :stopped)}
 
       _ ->
-        {:noreply,
-         %{state | port: nil, monitor: nil, status: :crashed, error: {:exit, exit_code}}}
+        {:noreply, new_state |> set_status(:crashed, {:exit, exit_code})}
     end
   end
 
   def handle_info({:DOWN, _, :port, port, reason}, %{port: port} = state) do
-    Port.demonitor(state.monitor, [:flush])
-    {:noreply, %{state | port: nil, monitor: nil, status: :crashed, error: {:exit, reason}}}
+    new_state = close_port(state) |> set_status(:crashed, {:exit, reason})
+    {:noreply, new_state}
   end
 
   def handle_info({port, {:data, data}}, %{port: port} = state) do
-    cond do
-      Regex.match?(~r/ERROR.*address in use/, data) ->
-        Port.demonitor(state.monitor, [:flush])
+    new_state =
+      cond do
+        Regex.match?(~r/ERROR.*address in use/, data) ->
+          close_port(state) |> set_status(:crashed, {:exit, :scsynth_port_in_use})
 
-        {:noreply,
-         %{
-           state
-           | port: nil,
-             monitor: nil,
-             status: :crashed,
-             error: {:exit, :scsynth_port_in_use}
-         }}
+        Regex.match?(~r/ERROR.*Invalid option/, data) ||
+            Regex.match?(~r/ERROR.*There must be a -u/, data) ->
+          close_port(state) |> set_status(:crashed, {:exit, :scsynth_invalid_args})
 
-      Regex.match?(~r/ERROR.*Invalid option/, data) ||
-          Regex.match?(~r/ERROR.*There must be a -u/, data) ->
-        Port.demonitor(state.monitor, [:flush])
+        true ->
+          state
+      end
 
-        {:noreply,
-         %{
-           state
-           | port: nil,
-             monitor: nil,
-             status: :crashed,
-             error: {:exit, :scsynth_invalid_args}
-         }}
-
-      true ->
-        {:noreply, state}
-    end
+    {:noreply, new_state}
   end
 
   def handle_info(_info, state) do
@@ -175,4 +161,16 @@ defmodule OscillEx.Server do
       _ -> false
     end
   end
+
+  defp close_port(%{monitor: monitor, port: port} = state) when is_reference(monitor) do
+    Port.demonitor(monitor, [:flush])
+
+    if is_port(port) and Port.info(port) != nil do
+      Port.close(port)
+    end
+
+    %{state | monitor: nil, port: nil}
+  end
+
+  defp set_status(state, status, error \\ nil), do: %{state | status: status, error: error}
 end
