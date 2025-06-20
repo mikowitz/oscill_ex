@@ -1,0 +1,64 @@
+name: "CI"
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      MIX_ENV: test
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    name: "[${{matrix.elixir}}/${{matrix.otp}}] CI Tests"
+    strategy:
+      matrix:
+        otp: [25, 26, 27, 28]
+        elixir: ["1.18", "1.19"]
+        exclude:
+          - otp: 28
+            elixir: 1.18
+          - otp: 25
+            elixir: 1.19
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{matrix.otp}}
+          elixir-version: ${{matrix.elixir}}
+
+      - name: mix-cache
+        uses: actions/cache@v4
+        id: mix-cache
+        with:
+          path: |
+            deps
+            _build
+          key: ${{ runner.os }}-${{ matrix.otp }}-${{ matrix.elixir }}-${{ hashFiles('mix.lock') }}
+
+      - name: mix local
+        run: |
+          mix local.rebar --force
+          mix local.hex --force
+
+      - name: mix compile
+        run: |
+          mix deps.get
+          mix deps.compile
+          mix compile
+        if: steps.mix-cache.outputs.cache-hit != 'true'
+
+      - name: mix checks
+        run: |
+          mix deps.unlock --check-unused
+          mix format --check-formatted
+
+      - name: mix test
+        run: mix test
+
+
