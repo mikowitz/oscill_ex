@@ -23,7 +23,6 @@ defmodule OscillEx.Server.ConfigTest do
       config =
         Config.new(
           executable: "/path/to/scsynth",
-          # credo:disable-for-next-line
           port: 10345,
           protocol: :tcp,
           ip_address: "0.0.0.0",

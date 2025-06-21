@@ -3,9 +3,37 @@ defmodule OscillEx.Server.Config do
   Struct for managing `scsynth` server configuration
   """
 
+  @type t :: %__MODULE__{
+          port: pos_integer(),
+          protocol: :udp | :tcp,
+          ip_address: String.t(),
+          control_bus_channel_count: non_neg_integer(),
+          audio_bus_channel_count: non_neg_integer(),
+          input_bus_channel_count: non_neg_integer(),
+          output_bus_channel_count: non_neg_integer(),
+          block_size: pos_integer(),
+          hardware_buffer_size: non_neg_integer(),
+          hardware_sample_rate: non_neg_integer(),
+          sample_buffer_count: non_neg_integer(),
+          node_max_count: non_neg_integer(),
+          synthdef_max_count: non_neg_integer(),
+          realtime_memory_size: non_neg_integer(),
+          wire_buffer_count: non_neg_integer(),
+          random_seed_count: non_neg_integer(),
+          load_synthdefs: boolean(),
+          publish_to_rendezvous: boolean(),
+          max_logins: pos_integer(),
+          password: String.t() | nil,
+          safety_clip: integer() | nil,
+          input_streams_enabled: String.t(),
+          output_streams_enabled: String.t(),
+          verbosity: non_neg_integer(),
+          ugens_plugin_path: String.t() | nil,
+          restricted_path: String.t() | nil
+        }
+
   defstruct executable: "scsynth",
             # -u / - v
-            # credo:disable-for-next-line
             port: 57110,
             protocol: :udp,
             # -B
