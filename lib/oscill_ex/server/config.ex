@@ -33,56 +33,31 @@ defmodule OscillEx.Server.Config do
         }
 
   defstruct executable: "scsynth",
-            # -u / - v
             port: 57110,
             protocol: :udp,
-            # -B
             ip_address: "127.0.0.1",
-            # -c
             control_bus_channel_count: 16_384,
-            # -a
             audio_bus_channel_count: 1024,
-            # -i
             input_bus_channel_count: 8,
-            # -o
             output_bus_channel_count: 8,
-            # -z
             block_size: 64,
-            # -Z
             hardware_buffer_size: 0,
-            # -S
             hardware_sample_rate: 0,
-            # -b
             sample_buffer_count: 1024,
-            # -n
             node_max_count: 1024,
-            # -d
             synthdef_max_count: 1024,
-            # -m
             realtime_memory_size: 8192,
-            # - w
             wire_buffer_count: 64,
-            # -r
             random_seed_count: 64,
-            # -D
             load_synthdefs: true,
-            # -R
             publish_to_rendezvous: false,
-            # -l
             max_logins: 1,
-            # -p
             password: nil,
-            # -s
             safety_clip: nil,
-            # -I
             input_streams_enabled: "",
-            # -O
             output_streams_enabled: "",
-            # -V
             verbosity: 0,
-            # -U
             ugens_plugin_path: nil,
-            # -P
             restricted_path: nil
 
   def new(config \\ []) do
