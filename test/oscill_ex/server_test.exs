@@ -143,7 +143,7 @@ defmodule OscillEx.ServerTest do
 
       :ok = Server.boot(pid)
 
-      assert has_status(pid, :booting)
+      assert has_status(pid, :running)
       assert has_error(pid, nil)
       assert has_open_port(pid)
     end
@@ -157,7 +157,7 @@ defmodule OscillEx.ServerTest do
 
       assert {:error, :already_running} = Server.boot(pid)
 
-      assert has_status(pid, :booting)
+      assert has_status(pid, :running)
       assert has_error(pid, nil)
       assert has_open_port(pid)
     end
@@ -215,7 +215,7 @@ defmodule OscillEx.ServerTest do
 
       :ok = Server.boot(pid)
 
-      assert has_status(pid, :booting)
+      assert has_status(pid, :running)
       assert has_open_port(pid)
     end
 
@@ -298,6 +298,96 @@ defmodule OscillEx.ServerTest do
     end
   end
 
+  describe "udp transport layer" do
+    test "server starts with no open connection" do
+      {:ok, pid} = Server.start_link()
+
+      assert no_udp_socket(pid)
+    end
+
+    test "is opened when the server boots" do
+      test_exec = create_executable("long_running", "sleep 300")
+
+      {:ok, pid} = Server.start_link(Config.new(executable: test_exec))
+
+      :ok = Server.boot(pid)
+
+      assert has_status(pid, :running)
+      assert has_udp_socket(pid)
+    end
+
+    test "is cleared when the server quits" do
+      test_exec = create_executable("long_running", "sleep 300")
+
+      {:ok, pid} = Server.start_link(Config.new(executable: test_exec))
+
+      :ok = Server.boot(pid)
+      :ok = Server.quit(pid)
+
+      assert has_status(pid, :stopped)
+      assert no_udp_socket(pid)
+    end
+
+    test "is cleared when the server crashes" do
+      test_exec = create_executable("crash", "exit 1")
+
+      {:ok, pid} = Server.start_link(Config.new(executable: test_exec))
+
+      :ok = Server.boot(pid)
+
+      :timer.sleep(500)
+
+      assert has_status(pid, :crashed)
+      assert no_udp_socket(pid)
+    end
+
+    test "stays clear when the scsynth server doesn't start" do
+      test_exec =
+        create_executable(
+          "scsynth-port-conflict",
+          "echo \"*** ERROR: failed to open socket: address in use.\""
+        )
+
+      {:ok, pid} = Server.start_link(Config.new(executable: test_exec))
+
+      :ok = Server.boot(pid)
+
+      :timer.sleep(500)
+
+      assert has_status(pid, :crashed)
+      assert no_udp_socket(pid)
+    end
+
+    test "is cleared when the executable crashes" do
+      test_exec = create_executable("long_running", "sleep 300")
+
+      {:ok, pid} = Server.start_link(Config.new(executable: test_exec))
+
+      :ok = Server.boot(pid)
+
+      port = :sys.get_state(pid).port
+
+      Port.close(port)
+
+      assert has_status(pid, :crashed)
+      assert no_udp_socket(pid)
+    end
+
+    test "restarts if it closes, and the server keeps running" do
+      test_exec = create_executable("long_running", "sleep 300")
+
+      {:ok, pid} = Server.start_link(Config.new(executable: test_exec))
+      :ok = Server.boot(pid)
+
+      udp_port = :sys.get_state(pid).udp_socket
+
+      Port.close(udp_port)
+
+      assert has_status(pid, :running)
+      assert has_udp_socket(pid)
+    end
+  end
+
   defp has_status(pid, status) do
     assert :sys.get_state(pid).status == status
   end
@@ -316,6 +406,20 @@ defmodule OscillEx.ServerTest do
     state = :sys.get_state(pid)
     assert is_nil(state.port)
     assert is_nil(state.monitor)
+  end
+
+  defp has_udp_socket(pid) do
+    state = :sys.get_state(pid)
+    assert is_port(state.udp_socket)
+    assert is_integer(state.udp_port)
+    assert is_reference(state.udp_monitor)
+  end
+
+  defp no_udp_socket(pid) do
+    state = :sys.get_state(pid)
+    assert is_nil(state.udp_socket)
+    assert is_nil(state.udp_port)
+    assert is_nil(state.udp_monitor)
   end
 
   defp create_executable(name, contents) do
