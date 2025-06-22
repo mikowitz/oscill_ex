@@ -2,6 +2,7 @@ defmodule OscillEx.ServerTest do
   use ExUnit.Case, async: true
 
   alias OscillEx.Server
+  alias OscillEx.Server.Config
 
   describe "start_link/1" do
     test "starts in :stopped state" do
@@ -13,27 +14,47 @@ defmodule OscillEx.ServerTest do
     test "starts with default configuration" do
       {:ok, pid} = Server.start_link()
 
-      assert has_config(pid, %{executable: "scsynth", args: ["-u", "57110", "-R", "0", "-l", "1"]})
+      config = :sys.get_state(pid).config
+      assert is_struct(config, Config)
+      assert config.executable == "scsynth"
+      assert config.port == 57110
+      assert config.protocol == :udp
+      refute config.publish_to_rendezvous
+      assert config.max_logins == 1
     end
 
-    test "config can be passed in as a map" do
-      config = %{executable: "/my/scsynth", args: ["-u", "57111", "-l", "1"]}
-      {:ok, pid} = Server.start_link(config)
+    test "config can be passed as a config struct" do
+      {:ok, pid} =
+        Server.start_link(Config.new(executable: "/my/scsynth", port: 57111, max_logins: 17))
 
-      assert has_config(pid, config)
+      config = :sys.get_state(pid).config
+      assert is_struct(config, Config)
+      assert config.executable == "/my/scsynth"
+      assert config.port == 57111
+      assert config.max_logins == 17
+    end
+
+    test "config can be passed as a map" do
+      {:ok, pid} = Server.start_link(%{executable: "/map/scsynth", port: 57222})
+      config = :sys.get_state(pid).config
+      assert is_struct(config, Config)
+      assert config.executable == "/map/scsynth"
+      assert config.port == 57222
     end
 
     test "config can be passed as a keyword list" do
-      config = [executable: "/my/scsynth", args: ["-u", "57111", "-l", "1"]]
-      {:ok, pid} = Server.start_link(config)
-
-      assert has_config(pid, %{executable: "/my/scsynth", args: ["-u", "57111", "-l", "1"]})
+      {:ok, pid} = Server.start_link(executable: "/keyword/scsynth", port: 57333)
+      config = :sys.get_state(pid).config
+      assert is_struct(config, Config)
+      assert config.executable == "/keyword/scsynth"
+      assert config.port == 57333
     end
   end
 
   describe "boot with errors" do
     test "when the executable doesn't exist" do
-      {:ok, pid} = Server.start_link(executable: "/this/doesnt/exist")
+      config = Config.new(executable: "/this/doesnt/exist")
+      {:ok, pid} = Server.start_link(config)
 
       assert {:error, {:file_not_found, "/this/doesnt/exist"}} == Server.boot(pid)
       assert has_status(pid, :error)
@@ -44,7 +65,7 @@ defmodule OscillEx.ServerTest do
       :ok = File.mkdir("this-is-a-dir")
       error = {:not_executable, "this-is-a-dir is a directory, not an executable file"}
 
-      {:ok, pid} = Server.start_link(executable: "this-is-a-dir")
+      {:ok, pid} = Server.start_link(Config.new(executable: "this-is-a-dir"))
 
       assert {:error, error} == Server.boot(pid)
       assert has_status(pid, :error)
@@ -60,7 +81,7 @@ defmodule OscillEx.ServerTest do
       File.chmod("non-executable", 0644)
       error = {:permission_denied, "non-executable"}
 
-      {:ok, pid} = Server.start_link(executable: "non-executable")
+      {:ok, pid} = Server.start_link(Config.new(executable: "non-executable"))
 
       assert {:error, error} == Server.boot(pid)
       assert has_status(pid, :error)
@@ -76,7 +97,7 @@ defmodule OscillEx.ServerTest do
     test "when the executable exits normally" do
       test_exec = create_executable("normal", "exit 0")
 
-      {:ok, pid} = Server.start_link(executable: test_exec)
+      {:ok, pid} = Server.start_link(Config.new(executable: test_exec))
       :ok = Server.boot(pid)
 
       :timer.sleep(500)
@@ -88,7 +109,7 @@ defmodule OscillEx.ServerTest do
     test "when the executable exits abnormally" do
       test_exec = create_executable("crash", "exit 1")
 
-      {:ok, pid} = Server.start_link(executable: test_exec)
+      {:ok, pid} = Server.start_link(Config.new(executable: test_exec))
       :ok = Server.boot(pid)
 
       :timer.sleep(500)
@@ -100,7 +121,7 @@ defmodule OscillEx.ServerTest do
     test "when the executable crashes" do
       test_exec = create_executable("long_running", "sleep 300")
 
-      {:ok, pid} = Server.start_link(executable: test_exec)
+      {:ok, pid} = Server.start_link(Config.new(executable: test_exec))
 
       :ok = Server.boot(pid)
 
@@ -118,7 +139,7 @@ defmodule OscillEx.ServerTest do
     test "when the process runs" do
       test_exec = create_executable("long_running", "sleep 300")
 
-      {:ok, pid} = Server.start_link(executable: test_exec)
+      {:ok, pid} = Server.start_link(Config.new(executable: test_exec))
 
       :ok = Server.boot(pid)
 
@@ -130,7 +151,7 @@ defmodule OscillEx.ServerTest do
     test "when the process is already running" do
       test_exec = create_executable("long_running", "sleep 300")
 
-      {:ok, pid} = Server.start_link(executable: test_exec)
+      {:ok, pid} = Server.start_link(Config.new(executable: test_exec))
 
       :ok = Server.boot(pid)
 
@@ -146,7 +167,7 @@ defmodule OscillEx.ServerTest do
     test "does nothing when the process is not running" do
       test_exec = create_executable("long_running", "sleep 300")
 
-      {:ok, pid} = Server.start_link(executable: test_exec)
+      {:ok, pid} = Server.start_link(Config.new(executable: test_exec))
 
       :ok = Server.quit(pid)
 
@@ -155,7 +176,7 @@ defmodule OscillEx.ServerTest do
 
     test "exits correctly when the process is running" do
       test_exec = create_executable("long_running", "sleep 300")
-      {:ok, pid} = Server.start_link(executable: test_exec)
+      {:ok, pid} = Server.start_link(Config.new(executable: test_exec))
 
       :ok = Server.boot(pid)
       :ok = Server.quit(pid)
@@ -169,7 +190,7 @@ defmodule OscillEx.ServerTest do
     test "passes provided arguments to process" do
       test_exec = create_executable("long_running", "echo \"$@\\c\" > args_output")
 
-      {:ok, pid} = Server.start_link(executable: test_exec, args: ["abc", "def", "ghi"])
+      {:ok, pid} = Server.start_link(Config.new(executable: test_exec))
 
       :ok = Server.boot(pid)
 
@@ -177,7 +198,7 @@ defmodule OscillEx.ServerTest do
 
       assert has_status(pid, :stopped)
 
-      assert File.read!("args_output") == "abc def ghi"
+      assert File.read!("args_output") == "-u 57110 -R 0 -l 1"
 
       on_exit(fn ->
         :ok = File.rm("args_output")
@@ -190,7 +211,7 @@ defmodule OscillEx.ServerTest do
       test_exec =
         create_executable("scsynth", "echo \"SuperCollider 3 server ready.\nsleep 100\nexit 0")
 
-      {:ok, pid} = Server.start_link(executable: test_exec)
+      {:ok, pid} = Server.start_link(Config.new(executable: test_exec))
 
       :ok = Server.boot(pid)
 
@@ -205,7 +226,7 @@ defmodule OscillEx.ServerTest do
           "echo \"*** ERROR: failed to open socket: address in use.\""
         )
 
-      {:ok, pid} = Server.start_link(executable: test_exec)
+      {:ok, pid} = Server.start_link(Config.new(executable: test_exec))
 
       :ok = Server.boot(pid)
 
@@ -223,7 +244,7 @@ defmodule OscillEx.ServerTest do
           "echo \"ERROR: Invalid option --z\""
         )
 
-      {:ok, pid} = Server.start_link(executable: test_exec)
+      {:ok, pid} = Server.start_link(Config.new(executable: test_exec))
 
       :ok = Server.boot(pid)
 
@@ -241,7 +262,7 @@ defmodule OscillEx.ServerTest do
           "echo \"ERROR: There must be a -u and/or a -t options, or -N for nonrealtime.\""
         )
 
-      {:ok, pid} = Server.start_link(executable: test_exec)
+      {:ok, pid} = Server.start_link(Config.new(executable: test_exec))
 
       :ok = Server.boot(pid)
 
@@ -257,7 +278,7 @@ defmodule OscillEx.ServerTest do
     test "closes the port when the port is open" do
       test_exec = create_executable("long_running", "sleep 300")
 
-      {:ok, pid} = Server.start_link(executable: test_exec)
+      {:ok, pid} = Server.start_link(Config.new(executable: test_exec))
 
       :ok = Server.boot(pid)
       assert has_open_port(pid)
@@ -279,10 +300,6 @@ defmodule OscillEx.ServerTest do
 
   defp has_status(pid, status) do
     assert :sys.get_state(pid).status == status
-  end
-
-  defp has_config(pid, config) do
-    assert :sys.get_state(pid).config == config
   end
 
   defp has_error(pid, error) do

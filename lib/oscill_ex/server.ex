@@ -2,6 +2,7 @@ defmodule OscillEx.Server do
   @moduledoc """
   Manages a port running a configurable instance of `scsynth`
   """
+  alias OscillEx.Server.Config
 
   use GenServer
 
@@ -10,23 +11,22 @@ defmodule OscillEx.Server do
           error: term() | nil,
           port: port() | nil,
           monitor: reference() | nil,
-          config: %{
-            executable: String.t(),
-            args: [String.t()]
-          }
+          config: Config.t()
         }
-
-  @default_config %{
-    executable: "scsynth",
-    args: ["-u", "57110", "-R", "0", "-l", "1"]
-  }
 
   #########
   ## API ##
   #########
 
-  def start_link(opts \\ %{}) do
-    GenServer.start_link(__MODULE__, Enum.into(opts, %{}))
+  def start_link(config \\ Config.new(publish_to_rendezvous: false, max_logins: 1)) do
+    config =
+      if is_struct(config, Config) do
+        config
+      else
+        struct(Config, Enum.into(config, %{}))
+      end
+
+    GenServer.start_link(__MODULE__, config)
   end
 
   def boot(pid) do
@@ -42,9 +42,7 @@ defmodule OscillEx.Server do
   ###############
 
   @impl GenServer
-  def init(opts \\ %{}) do
-    config = Map.merge(@default_config, opts)
-
+  def init(config) do
     {:ok,
      %{
        status: :stopped,
@@ -60,17 +58,17 @@ defmodule OscillEx.Server do
     {:reply, {:error, :already_running}, state}
   end
 
-  def handle_call(:boot, _, state) do
-    %{config: %{executable: executable, args: args}} = state
+  def handle_call(:boot, _, %{config: config} = state) do
+    args = Config.command_line_args(config)
 
     {resp, new_state} =
-      case validate_executable(executable) do
+      case validate_executable(config.executable) do
         :ok ->
           port =
             Port.open(
               {:spawn_executable, "./bin/wrapper"},
               [
-                {:args, [executable | args]},
+                {:args, args},
                 :binary,
                 :exit_status
               ]
