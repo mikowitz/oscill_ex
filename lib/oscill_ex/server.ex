@@ -280,15 +280,11 @@ defmodule OscillEx.Server do
 
   defp set_status(state, status, error \\ nil), do: %{state | status: status, error: error}
 
-  @scsynth_error_patterns %{
-    port_in_use: ~r/ERROR.*address in use/,
-    invalid_args: ~r/ERROR.*There must be a -u|ERROR.*Invalid option/
-  }
-
   defp handle_scsynth_error(data) do
-    case Enum.find(@scsynth_error_patterns, fn {_e, r} -> Regex.match?(r, data) end) do
-      nil -> :ok
-      {error, _regex} -> {:error, :"scsynth_#{error}"}
+    cond do
+      data =~ ~r/ERROR.*address in use/ -> {:error, :scsynth_port_in_use}
+      data =~ ~r/ERROR.*(There must be a -u|Invalid option)/ -> {:error, :scsynth_invalid_args}
+      true -> :ok
     end
   end
 end
