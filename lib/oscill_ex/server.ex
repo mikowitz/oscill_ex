@@ -79,12 +79,8 @@ defmodule OscillEx.Server do
   end
 
   @impl GenServer
-  def handle_call(
-        {:send_osc_message, message},
-        _from,
-        %__MODULE__{status: :running, udp: %{socket: socket}} = state
-      ) do
-    %__MODULE__{config: %Config{ip_address: host, port: port}} = state
+  def handle_call({:send_osc_message, message}, _from, %__MODULE__{status: :running} = state) do
+    %__MODULE__{config: %Config{ip_address: host, port: port}, udp: %{socket: socket}} = state
 
     case UdpSocket.send_message(socket, host, port, message) do
       :ok -> {:reply, :ok, state}
@@ -96,8 +92,7 @@ defmodule OscillEx.Server do
     {:reply, {:error, :no_udp_socket}, state}
   end
 
-  def handle_call({:send_osc_message, _message}, _from, %__MODULE__{status: status} = state)
-      when status != :running do
+  def handle_call({:send_osc_message, _message}, _from, %__MODULE__{} = state) do
     {:reply, {:error, :not_running}, state}
   end
 
