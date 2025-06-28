@@ -101,42 +101,27 @@ defmodule OscillEx.Server do
     {:reply, {:error, :already_running}, state}
   end
 
-  def handle_call(:boot, _, state) do
-    args = Config.command_line_args(state.config)
-
-    {resp, new_state} =
-      case validate_executable(state.config.executable) do
+  def handle_call(:boot, _, %{config: config} = state) do
+    {reply, new_state} =
+      case validate_executable(config.executable) do
         :ok ->
-          port =
-            Port.open(
-              {:spawn_executable, "./bin/wrapper"},
-              [
-                {:args, args},
-                :binary,
-                :exit_status
-              ]
-            )
-
-          monitor = Port.monitor(port)
+          {:ok, port, monitor} = open_port(config)
           {:ok, udp} = UdpSocket.open()
 
           {:ok,
            %{
              state
-             | status: :running,
-               port: port,
+             | port: port,
                monitor: monitor,
                udp: udp
-           }}
+           }
+           |> set_status(:running)}
 
-        {:error, error} ->
-          {
-            {:error, error},
-            %{state | status: :error, error: error}
-          }
+        {:error, error} = error_tuple ->
+          {error_tuple, set_status(state, :error, error)}
       end
 
-    {:reply, resp, new_state}
+    {:reply, reply, new_state}
   end
 
   def handle_call(:quit, _, %__MODULE__{status: :stopped} = state) do
@@ -281,5 +266,23 @@ defmodule OscillEx.Server do
       data =~ ~r/ERROR.*(There must be a -u|Invalid option)/ -> {:error, :scsynth_invalid_args}
       true -> :ok
     end
+  end
+
+  defp open_port(config) do
+    args = Config.command_line_args(config)
+
+    port =
+      Port.open(
+        {:spawn_executable, "./bin/wrapper"},
+        [
+          {:args, args},
+          :binary,
+          :exit_status
+        ]
+      )
+
+    monitor = Port.monitor(port)
+
+    {:ok, port, monitor}
   end
 end
