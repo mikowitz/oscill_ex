@@ -3,6 +3,7 @@ defmodule OscillEx.Server do
   Manages a port running a configurable instance of `scsynth`
   """
   alias OscillEx.Server.Config
+  alias OscillEx.UdpSocket
 
   require Logger
 
@@ -21,7 +22,7 @@ defmodule OscillEx.Server do
           port: port() | nil,
           monitor: reference() | nil,
           config: Config.t(),
-          udp: %{socket: port() | nil, port: integer() | nil, monitor: reference() | nil} | nil
+          udp: UdpSocket.t() | nil
         }
 
   #########
@@ -85,7 +86,7 @@ defmodule OscillEx.Server do
       ) do
     %__MODULE__{config: %Config{ip_address: host, port: port}} = state
 
-    case :gen_udp.send(socket, to_charlist(host), port, message) do
+    case UdpSocket.send_message(socket, host, port, message) do
       :ok -> {:reply, :ok, state}
       {:error, reason} -> {:reply, {:error, reason}, state}
     end
@@ -122,16 +123,16 @@ defmodule OscillEx.Server do
             )
 
           monitor = Port.monitor(port)
-          {:ok, udp_socket, udp_port, udp_monitor} = open_udp_socket()
+          {:ok, udp} = UdpSocket.open()
 
           {:ok,
            %{
              state
              | status: :running,
                port: port,
-               monitor: monitor
-           }
-           |> set_udp_socket(udp_socket, udp_port, udp_monitor)}
+               monitor: monitor,
+               udp: udp
+           }}
 
         {:error, error} ->
           {
@@ -168,9 +169,9 @@ defmodule OscillEx.Server do
   def handle_info({port, {:exit_status, _exit_code}}, %__MODULE__{udp: %{socket: port}} = state) do
     new_state = close_udp_socket(state)
 
-    {:ok, udp_socket, udp_port, udp_monitor} = open_udp_socket()
+    {:ok, udp} = UdpSocket.open()
 
-    new_state = set_udp_socket(new_state, udp_socket, udp_port, udp_monitor)
+    new_state = %{new_state | udp: udp}
 
     {:noreply, new_state}
   end
@@ -183,9 +184,9 @@ defmodule OscillEx.Server do
   def handle_info({:DOWN, _, :port, port, _reason}, %__MODULE__{udp: %{socket: port}} = state) do
     new_state = close_udp_socket(state)
 
-    {:ok, udp_socket, udp_port, udp_monitor} = open_udp_socket()
+    {:ok, udp} = UdpSocket.open()
 
-    new_state = set_udp_socket(new_state, udp_socket, udp_port, udp_monitor)
+    new_state = %{new_state | udp: udp}
 
     {:noreply, new_state}
   end
@@ -222,6 +223,19 @@ defmodule OscillEx.Server do
     {:noreply, state}
   end
 
+  @impl GenServer
+  def terminate(_reason, %__MODULE__{status: :running} = state) do
+    state
+    |> close_port()
+    |> close_udp_socket()
+
+    :ok
+  end
+
+  def terminate(_reason, _state) do
+    :ok
+  end
+
   defp validate_executable(executable) do
     case File.stat(executable) do
       {:ok, %File.Stat{type: :regular}} ->
@@ -246,14 +260,6 @@ defmodule OscillEx.Server do
     end
   end
 
-  defp open_udp_socket do
-    {:ok, udp_socket} = :gen_udp.open(0, [:binary, {:active, true}])
-    {:ok, udp_port} = :inet.port(udp_socket)
-    udp_monitor = Port.monitor(udp_socket)
-
-    {:ok, udp_socket, udp_port, udp_monitor}
-  end
-
   defp close_port(%__MODULE__{monitor: monitor, port: port} = state) when is_reference(monitor) do
     Port.demonitor(monitor, [:flush])
 
@@ -264,30 +270,15 @@ defmodule OscillEx.Server do
     %{state | monitor: nil, port: nil}
   end
 
-  defp close_udp_socket(%__MODULE__{udp: udp} = state) when is_map(udp) do
-    %{socket: socket, monitor: monitor} = udp
-
-    if is_reference(monitor) do
-      Port.demonitor(monitor, [:flush])
-    end
-
-    if is_port(socket) && Port.info(socket) != nil do
-      Port.close(socket)
-    end
-
+  defp close_udp_socket(%__MODULE__{udp: udp} = state) do
+    UdpSocket.close(udp)
     %{state | udp: nil}
   end
-
-  defp close_udp_socket(state), do: state
 
   defp normalize_config(config) when is_struct(config, Config), do: config
   defp normalize_config(config), do: struct(Config, Enum.into(config, %{}))
 
   defp set_status(state, status, error \\ nil), do: %{state | status: status, error: error}
-
-  defp set_udp_socket(state, socket, port, monitor) do
-    %{state | udp: %{socket: socket, port: port, monitor: monitor}}
-  end
 
   @scsynth_error_patterns %{
     port_in_use: ~r/ERROR.*address in use/,

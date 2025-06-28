@@ -306,20 +306,23 @@ defmodule OscillEx.ServerTest do
   end
 
   describe "GenServer termination" do
-    test "closes the port when the port is open" do
+    test "closes the port and UDP socket when the port is open" do
       test_exec = create_executable("long_running", "sleep 300")
 
       {:ok, pid} = Server.start_link(Config.new(executable: test_exec))
 
       :ok = Server.boot(pid)
       assert has_open_port(pid)
+      assert has_udp_socket(pid)
 
       port = :sys.get_state(pid).port
+      udp_socket = :sys.get_state(pid).udp.socket
 
       GenServer.stop(pid)
       :timer.sleep(100)
 
       assert Port.info(port) == nil
+      assert Port.info(udp_socket) == nil
     end
 
     test "does nothing when no process is running" do
