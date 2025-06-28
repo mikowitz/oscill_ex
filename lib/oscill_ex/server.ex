@@ -8,8 +8,17 @@ defmodule OscillEx.Server do
 
   use GenServer
 
-  @type state :: %{
-          status: :stopped | :booting | :error | :crash,
+  defstruct status: :stopped,
+            error: nil,
+            port: nil,
+            monitor: nil,
+            config: nil,
+            udp_socket: nil,
+            udp_port: nil,
+            udp_monitor: nil
+
+  @type t :: %__MODULE__{
+          status: :stopped | :booting | :error | :crashed,
           error: term() | nil,
           port: port() | nil,
           monitor: reference() | nil,
@@ -24,13 +33,7 @@ defmodule OscillEx.Server do
   #########
 
   def start_link(config \\ Config.new(publish_to_rendezvous: false, max_logins: 1)) do
-    config =
-      if is_struct(config, Config) do
-        config
-      else
-        struct(Config, Enum.into(config, %{}))
-      end
-
+    config = normalize_config(config)
     GenServer.start_link(__MODULE__, config)
   end
 
@@ -52,32 +55,25 @@ defmodule OscillEx.Server do
 
   @impl GenServer
   def init(config) do
-    {:ok,
-     %{
-       status: :stopped,
-       error: nil,
-       config: config,
-       port: nil,
-       monitor: nil,
-       udp_socket: nil,
-       udp_port: nil,
-       udp_monitor: nil
-     }}
+    {:ok, %__MODULE__{config: config}}
   end
 
   @impl GenServer
-  def handle_call({:send_osc_message, message}, _from, state) do
-    %{config: %Config{ip_address: host, port: port}, udp_socket: socket} = state
-
+  def handle_call(
+        {:send_osc_message, message},
+        _from,
+        %__MODULE__{config: %Config{ip_address: host, port: port}, udp_socket: socket} = state
+      ) do
     :gen_udp.send(socket, to_charlist(host), port, message)
     {:reply, :ok, state}
   end
 
-  def handle_call(:boot, _, %{status: status} = state) when status in [:booting, :running] do
+  def handle_call(:boot, _, %__MODULE__{status: status} = state)
+      when status in [:booting, :running] do
     {:reply, {:error, :already_running}, state}
   end
 
-  def handle_call(:boot, _, %{config: config} = state) do
+  def handle_call(:boot, _, %__MODULE__{config: config} = state) do
     args = Config.command_line_args(config)
 
     {resp, new_state} =
@@ -101,11 +97,9 @@ defmodule OscillEx.Server do
              state
              | status: :running,
                port: port,
-               monitor: monitor,
-               udp_socket: udp_socket,
-               udp_port: udp_port,
-               udp_monitor: udp_monitor
-           }}
+               monitor: monitor
+           }
+           |> set_udp_socket(udp_socket, udp_port, udp_monitor)}
 
         {:error, error} ->
           {
@@ -117,17 +111,17 @@ defmodule OscillEx.Server do
     {:reply, resp, new_state}
   end
 
-  def handle_call(:quit, _, %{status: :stopped} = state) do
+  def handle_call(:quit, _, %__MODULE__{status: :stopped} = state) do
     {:reply, :ok, state}
   end
 
-  def handle_call(:quit, _, %{port: port} = state) when is_port(port) do
+  def handle_call(:quit, _, %__MODULE__{port: port} = state) when is_port(port) do
     new_state = close_port(state) |> close_udp_socket() |> set_status(:stopped)
     {:reply, :ok, new_state}
   end
 
   @impl GenServer
-  def handle_info({port, {:exit_status, exit_code}}, %{port: port} = state) do
+  def handle_info({port, {:exit_status, exit_code}}, %__MODULE__{port: port} = state) do
     new_state = close_port(state) |> close_udp_socket()
 
     case exit_code do
@@ -139,64 +133,42 @@ defmodule OscillEx.Server do
     end
   end
 
-  def handle_info({port, {:exit_status, _exit_code}}, %{udp_socket: port} = state) do
+  def handle_info({port, {:exit_status, _exit_code}}, %__MODULE__{udp_socket: port} = state) do
     new_state = close_udp_socket(state)
 
     {:ok, udp_socket, udp_port, udp_monitor} = open_udp_socket()
 
-    new_state = %{
-      new_state
-      | udp_socket: udp_socket,
-        udp_port: udp_port,
-        udp_monitor: udp_monitor
-    }
+    new_state = set_udp_socket(new_state, udp_socket, udp_port, udp_monitor)
 
     {:noreply, new_state}
   end
 
-  def handle_info({:DOWN, _, :port, port, reason}, %{port: port} = state) do
+  def handle_info({:DOWN, _, :port, port, reason}, %__MODULE__{port: port} = state) do
     new_state = close_port(state) |> close_udp_socket() |> set_status(:crashed, {:exit, reason})
     {:noreply, new_state}
   end
 
-  def handle_info({:DOWN, _, :port, port, _reason}, %{udp_socket: port} = state) do
+  def handle_info({:DOWN, _, :port, port, _reason}, %__MODULE__{udp_socket: port} = state) do
     new_state = close_udp_socket(state)
 
     {:ok, udp_socket, udp_port, udp_monitor} = open_udp_socket()
 
-    new_state = %{
-      new_state
-      | udp_socket: udp_socket,
-        udp_port: udp_port,
-        udp_monitor: udp_monitor
-    }
-
-    new_state = %{
-      new_state
-      | udp_socket: udp_socket,
-        udp_port: udp_port,
-        udp_monitor: udp_monitor
-    }
+    new_state = set_udp_socket(new_state, udp_socket, udp_port, udp_monitor)
 
     {:noreply, new_state}
   end
 
-  def handle_info({port, {:data, data}}, %{port: port} = state) do
+  def handle_info({port, {:data, data}}, %__MODULE__{port: port} = state) do
     new_state =
-      cond do
-        Regex.match?(~r/ERROR.*address in use/, data) ->
-          close_port(state)
-          |> close_udp_socket()
-          |> set_status(:crashed, {:exit, :scsynth_port_in_use})
-
-        Regex.match?(~r/ERROR.*Invalid option/, data) ||
-            Regex.match?(~r/ERROR.*There must be a -u/, data) ->
-          close_port(state)
-          |> close_udp_socket()
-          |> set_status(:crashed, {:exit, :scsynth_invalid_args})
-
-        true ->
+      case handle_scsynth_error(data) do
+        :ok ->
           state
+
+        {:error, error} ->
+          state
+          |> close_port()
+          |> close_udp_socket()
+          |> set_status(:crashed, {:exit, error})
       end
 
     {:noreply, new_state}
@@ -204,7 +176,7 @@ defmodule OscillEx.Server do
 
   def handle_info(
         {:udp, socket, _, port, message},
-        %{
+        %__MODULE__{
           config: %Config{port: port},
           udp_socket: socket
         } = state
@@ -250,7 +222,7 @@ defmodule OscillEx.Server do
     {:ok, udp_socket, udp_port, udp_monitor}
   end
 
-  defp close_port(%{monitor: monitor, port: port} = state) when is_reference(monitor) do
+  defp close_port(%__MODULE__{monitor: monitor, port: port} = state) when is_reference(monitor) do
     Port.demonitor(monitor, [:flush])
 
     if is_port(port) and Port.info(port) != nil do
@@ -260,9 +232,7 @@ defmodule OscillEx.Server do
     %{state | monitor: nil, port: nil}
   end
 
-  defp close_udp_socket(state) do
-    %{udp_socket: socket, udp_monitor: monitor} = state
-
+  defp close_udp_socket(%__MODULE__{udp_socket: socket, udp_monitor: monitor} = state) do
     if is_reference(monitor) do
       Port.demonitor(monitor, [:flush])
     end
@@ -274,5 +244,24 @@ defmodule OscillEx.Server do
     %{state | udp_monitor: nil, udp_socket: nil, udp_port: nil}
   end
 
+  defp normalize_config(config) when is_struct(config, Config), do: config
+  defp normalize_config(config), do: struct(Config, Enum.into(config, %{}))
+
   defp set_status(state, status, error \\ nil), do: %{state | status: status, error: error}
+
+  defp set_udp_socket(state, socket, port, monitor) do
+    %{state | udp_socket: socket, udp_port: port, udp_monitor: monitor}
+  end
+
+  @scsynth_error_patterns %{
+    port_in_use: ~r/ERROR.*address in use/,
+    invalid_args: ~r/ERROR.*There must be a -u|ERROR.*Invalid option/
+  }
+
+  defp handle_scsynth_error(data) do
+    case Enum.find(@scsynth_error_patterns, fn {_e, r} -> Regex.match?(r, data) end) do
+      nil -> :ok
+      {error, _regex} -> {:error, :"scsynth_#{error}"}
+    end
+  end
 end
