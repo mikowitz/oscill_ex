@@ -379,9 +379,9 @@ defmodule OscillEx.ServerTest do
       {:ok, pid} = Server.start_link(Config.new(executable: test_exec))
       :ok = Server.boot(pid)
 
-      udp_port = :sys.get_state(pid).udp_socket
+      udp_socket = :sys.get_state(pid).udp.socket
 
-      Port.close(udp_port)
+      Port.close(udp_socket)
 
       assert has_status(pid, :running)
       assert has_udp_socket(pid)
@@ -410,16 +410,15 @@ defmodule OscillEx.ServerTest do
 
   defp has_udp_socket(pid) do
     state = :sys.get_state(pid)
-    assert is_port(state.udp_socket)
-    assert is_integer(state.udp_port)
-    assert is_reference(state.udp_monitor)
+    assert is_map(state.udp)
+    assert is_port(state.udp.socket)
+    assert is_integer(state.udp.port)
+    assert is_reference(state.udp.monitor)
   end
 
   defp no_udp_socket(pid) do
     state = :sys.get_state(pid)
-    assert is_nil(state.udp_socket)
-    assert is_nil(state.udp_port)
-    assert is_nil(state.udp_monitor)
+    assert is_nil(state.udp)
   end
 
   defp create_executable(name, contents) do

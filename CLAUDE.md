@@ -74,3 +74,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Creates temporary executable files for testing process management
 - Tests UDP socket lifecycle and recovery scenarios
 - Uses helper functions for state inspection and assertions
+
+## Interaction Guidelines
+
+**Edit Approval Workflow**
+- Never activate auto-accept edits mode without asking me first
+- Even after approving a plan, each individual edit must be reviewed and approved separately
+- Always ask for explicit permission before switching to any auto-accept mode
+
+**Testing**
+- Do not run `mix test` - the user has `mix test.watch` running in another terminal to monitor test failures automatically
