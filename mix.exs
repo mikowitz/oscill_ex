@@ -23,6 +23,7 @@ defmodule OscillEx.MixProject do
   defp deps do
     [
       {:credo, "~> 1.7.12", only: :test, runtime: false},
+      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:mix_test_watch, "~> 1.2", only: :test, runtime: false}
     ]
   end
