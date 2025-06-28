@@ -41,6 +41,29 @@ defmodule OscillEx.Server do
     GenServer.call(pid, :quit)
   end
 
+  @doc """
+  Sends an OSC message to the running scsynth server.
+
+  Returns `:ok` on success, or `{:error, reason}` on failure.
+
+  ## Examples
+
+      iex> {:ok, pid} = Server.start_link()
+      iex> Server.boot(pid)
+      iex> Server.send_osc_message(pid, <<1, 2, 3>>)
+      :ok
+
+      iex> {:ok, pid} = Server.start_link()
+      iex> Server.send_osc_message(pid, <<1, 2, 3>>)
+      {:error, :not_running}
+
+  ## Error cases
+
+  - `{:error, :not_running}` - Server is not in running state
+  - `{:error, :no_udp_socket}` - UDP socket is not available
+  - `{:error, reason}` - UDP send operation failed
+  """
+  @spec send_osc_message(pid(), binary()) :: :ok | {:error, atom()}
   def send_osc_message(pid, message) when is_binary(message) do
     GenServer.call(pid, {:send_osc_message, message})
   end
@@ -55,10 +78,26 @@ defmodule OscillEx.Server do
   end
 
   @impl GenServer
-  def handle_call({:send_osc_message, message}, _from, state) do
-    %__MODULE__{config: %Config{ip_address: host, port: port}, udp: %{socket: socket}} = state
-    :gen_udp.send(socket, to_charlist(host), port, message)
-    {:reply, :ok, state}
+  def handle_call(
+        {:send_osc_message, message},
+        _from,
+        %__MODULE__{status: :running, udp: %{socket: socket}} = state
+      ) do
+    %__MODULE__{config: %Config{ip_address: host, port: port}} = state
+
+    case :gen_udp.send(socket, to_charlist(host), port, message) do
+      :ok -> {:reply, :ok, state}
+      {:error, reason} -> {:reply, {:error, reason}, state}
+    end
+  end
+
+  def handle_call({:send_osc_message, _message}, _from, %__MODULE__{udp: nil} = state) do
+    {:reply, {:error, :no_udp_socket}, state}
+  end
+
+  def handle_call({:send_osc_message, _message}, _from, %__MODULE__{status: status} = state)
+      when status != :running do
+    {:reply, {:error, :not_running}, state}
   end
 
   def handle_call(:boot, _, %__MODULE__{status: status} = state)

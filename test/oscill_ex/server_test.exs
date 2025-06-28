@@ -274,6 +274,37 @@ defmodule OscillEx.ServerTest do
     end
   end
 
+  describe "send_osc_message/2" do
+    test "returns error when server not running" do
+      {:ok, pid} = Server.start_link()
+
+      # Throw a dummy value into the state so we skip to the next function head
+      :sys.replace_state(pid, fn state -> %{state | udp: :dummy_udp} end)
+
+      assert {:error, :not_running} = Server.send_osc_message(pid, <<1, 2, 3>>)
+    end
+
+    test "returns error when UDP socket not available" do
+      config = Config.new(executable: "/this/doesnt/exist")
+      {:ok, pid} = Server.start_link(config)
+
+      # Try to boot with invalid executable, which should fail and leave UDP nil
+      assert {:error, _} = Server.boot(pid)
+      assert {:error, :no_udp_socket} = Server.send_osc_message(pid, <<1, 2, 3>>)
+    end
+
+    test "returns ok when message sent successfully" do
+      test_exec = create_executable("long_running", "sleep 300")
+      {:ok, pid} = Server.start_link(Config.new(executable: test_exec))
+
+      :ok = Server.boot(pid)
+
+      # This should currently pass since the function always returns :ok
+      # But after implementing error handling, it should return :ok for successful sends
+      assert :ok = Server.send_osc_message(pid, <<1, 2, 3>>)
+    end
+  end
+
   describe "GenServer termination" do
     test "closes the port when the port is open" do
       test_exec = create_executable("long_running", "sleep 300")
