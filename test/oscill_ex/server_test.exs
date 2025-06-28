@@ -4,11 +4,14 @@ defmodule OscillEx.ServerTest do
   alias OscillEx.Server
   alias OscillEx.Server.Config
 
+  import OscillEx.Test.Support.Assertions
+  import OscillEx.Test.Support.ExecutableHelpers
+
   describe "start_link/1" do
     test "starts in :stopped state" do
       {:ok, pid} = Server.start_link()
 
-      assert has_status(pid, :stopped)
+      assert_status(pid, :stopped)
     end
 
     test "starts with default configuration" do
@@ -57,8 +60,8 @@ defmodule OscillEx.ServerTest do
       {:ok, pid} = Server.start_link(config)
 
       assert {:error, {:file_not_found, "/this/doesnt/exist"}} == Server.boot(pid)
-      assert has_status(pid, :error)
-      assert has_error(pid, {:file_not_found, "/this/doesnt/exist"})
+      assert_status(pid, :error)
+      assert_error(pid, {:file_not_found, "/this/doesnt/exist"})
     end
 
     test "when the executable isn't a regular file" do
@@ -68,8 +71,8 @@ defmodule OscillEx.ServerTest do
       {:ok, pid} = Server.start_link(Config.new(executable: "this-is-a-dir"))
 
       assert {:error, error} == Server.boot(pid)
-      assert has_status(pid, :error)
-      assert has_error(pid, error)
+      assert_status(pid, :error)
+      assert_error(pid, error)
 
       on_exit(fn ->
         :ok = File.rmdir("this-is-a-dir")
@@ -84,8 +87,8 @@ defmodule OscillEx.ServerTest do
       {:ok, pid} = Server.start_link(Config.new(executable: "non-executable"))
 
       assert {:error, error} == Server.boot(pid)
-      assert has_status(pid, :error)
-      assert has_error(pid, error)
+      assert_status(pid, :error)
+      assert_error(pid, error)
 
       on_exit(fn ->
         :ok = File.rm("non-executable")
@@ -95,182 +98,148 @@ defmodule OscillEx.ServerTest do
 
   describe "handling exit states" do
     test "when the executable exits normally" do
-      test_exec = create_executable("normal", "exit 0")
+      with_test_server(:exit_normal, fn pid ->
+        :ok = Server.boot(pid)
 
-      {:ok, pid} = Server.start_link(Config.new(executable: test_exec))
-      :ok = Server.boot(pid)
+        :timer.sleep(500)
 
-      :timer.sleep(500)
-
-      assert has_status(pid, :stopped)
-      assert has_error(pid, nil)
+        assert_status(pid, :stopped)
+        assert_error(pid, nil)
+      end)
     end
 
     test "when the executable exits abnormally" do
-      test_exec = create_executable("crash", "exit 1")
+      with_test_server(:crash, fn pid ->
+        :ok = Server.boot(pid)
 
-      {:ok, pid} = Server.start_link(Config.new(executable: test_exec))
-      :ok = Server.boot(pid)
+        :timer.sleep(500)
 
-      :timer.sleep(500)
-
-      assert has_status(pid, :crashed)
-      assert has_error(pid, {:exit, 1})
+        assert_status(pid, :crashed)
+        assert_error(pid, {:exit, 1})
+      end)
     end
 
     test "when the executable crashes" do
-      test_exec = create_executable("long_running", "sleep 300")
+      with_test_server(fn pid ->
+        :ok = Server.boot(pid)
 
-      {:ok, pid} = Server.start_link(Config.new(executable: test_exec))
+        port = :sys.get_state(pid).port
 
-      :ok = Server.boot(pid)
+        Port.close(port)
 
-      port = :sys.get_state(pid).port
-
-      Port.close(port)
-
-      assert has_status(pid, :crashed)
-      assert has_error(pid, {:exit, :normal})
-      assert no_port(pid)
+        assert_status(pid, :crashed)
+        assert_error(pid, {:exit, :normal})
+        assert_no_port(pid)
+      end)
     end
   end
 
   describe "boot/1" do
     test "when the process runs" do
-      test_exec = create_executable("long_running", "sleep 300")
+      with_test_server(fn pid ->
+        :ok = Server.boot(pid)
 
-      {:ok, pid} = Server.start_link(Config.new(executable: test_exec))
-
-      :ok = Server.boot(pid)
-
-      assert has_status(pid, :running)
-      assert has_error(pid, nil)
-      assert has_open_port(pid)
+        assert_status(pid, :running)
+        assert_error(pid, nil)
+        assert_has_open_port(pid)
+      end)
     end
 
     test "when the process is already running" do
-      test_exec = create_executable("long_running", "sleep 300")
+      with_test_server(fn pid ->
+        :ok = Server.boot(pid)
 
-      {:ok, pid} = Server.start_link(Config.new(executable: test_exec))
+        assert {:error, :already_running} = Server.boot(pid)
 
-      :ok = Server.boot(pid)
-
-      assert {:error, :already_running} = Server.boot(pid)
-
-      assert has_status(pid, :running)
-      assert has_error(pid, nil)
-      assert has_open_port(pid)
+        assert_status(pid, :running)
+        assert_error(pid, nil)
+        assert_has_open_port(pid)
+      end)
     end
   end
 
   describe "quit/1" do
     test "does nothing when the process is not running" do
-      test_exec = create_executable("long_running", "sleep 300")
+      with_test_server(:long_running, fn pid ->
+        :ok = Server.quit(pid)
 
-      {:ok, pid} = Server.start_link(Config.new(executable: test_exec))
-
-      :ok = Server.quit(pid)
-
-      assert has_status(pid, :stopped)
+        assert_status(pid, :stopped)
+      end)
     end
 
     test "exits correctly when the process is running" do
-      test_exec = create_executable("long_running", "sleep 300")
-      {:ok, pid} = Server.start_link(Config.new(executable: test_exec))
+      with_test_server(:long_running, fn pid ->
+        :ok = Server.boot(pid)
+        :ok = Server.quit(pid)
 
-      :ok = Server.boot(pid)
-      :ok = Server.quit(pid)
-
-      assert has_status(pid, :stopped)
-      assert no_port(pid)
+        assert_status(pid, :stopped)
+        assert_no_port(pid)
+      end)
     end
   end
 
   describe "argument handling" do
     test "passes provided arguments to process" do
-      test_exec = create_executable("long_running", "echo \"$@\\c\" > args_output")
+      with_test_server(:capture_args, fn pid ->
+        :ok = Server.boot(pid)
 
-      {:ok, pid} = Server.start_link(Config.new(executable: test_exec))
+        :timer.sleep(500)
 
-      :ok = Server.boot(pid)
+        assert_status(pid, :stopped)
 
-      :timer.sleep(500)
+        assert File.read!("args_output") == "-u 57110 -R 0 -l 1"
 
-      assert has_status(pid, :stopped)
-
-      assert File.read!("args_output") == "-u 57110 -R 0 -l 1"
-
-      on_exit(fn ->
-        :ok = File.rm("args_output")
+        on_exit(fn ->
+          :ok = File.rm("args_output")
+        end)
       end)
     end
   end
 
   describe "scsynth-like behaviour" do
     test "booting successfully" do
-      test_exec =
-        create_executable("scsynth", "echo \"SuperCollider 3 server ready.\nsleep 100\nexit 0")
+      with_test_server(:scsynth_success, fn pid ->
+        :ok = Server.boot(pid)
 
-      {:ok, pid} = Server.start_link(Config.new(executable: test_exec))
-
-      :ok = Server.boot(pid)
-
-      assert has_status(pid, :running)
-      assert has_open_port(pid)
+        assert_status(pid, :running)
+        assert_has_open_port(pid)
+      end)
     end
 
     test "when the port is already in use" do
-      test_exec =
-        create_executable(
-          "scsynth-port-conflict",
-          "echo \"*** ERROR: failed to open socket: address in use.\""
-        )
+      with_test_server(:scsynth_port_in_use, fn pid ->
+        :ok = Server.boot(pid)
 
-      {:ok, pid} = Server.start_link(Config.new(executable: test_exec))
+        :timer.sleep(500)
 
-      :ok = Server.boot(pid)
-
-      :timer.sleep(500)
-
-      assert has_status(pid, :crashed)
-      assert has_error(pid, {:exit, :scsynth_port_in_use})
-      assert no_port(pid)
+        assert_status(pid, :crashed)
+        assert_error(pid, {:exit, :scsynth_port_in_use})
+        assert_no_port(pid)
+      end)
     end
 
     test "with invalid arguments" do
-      test_exec =
-        create_executable(
-          "scsynth-arg-conflict",
-          "echo \"ERROR: Invalid option --z\""
-        )
+      with_test_server(:scsynth_invalid_arg, fn pid ->
+        :ok = Server.boot(pid)
 
-      {:ok, pid} = Server.start_link(Config.new(executable: test_exec))
+        :timer.sleep(500)
 
-      :ok = Server.boot(pid)
-
-      :timer.sleep(500)
-
-      assert has_status(pid, :crashed)
-      assert has_error(pid, {:exit, :scsynth_invalid_args})
-      assert no_port(pid)
+        assert_status(pid, :crashed)
+        assert_error(pid, {:exit, :scsynth_invalid_args})
+        assert_no_port(pid)
+      end)
     end
 
     test "with missing required arguments" do
-      test_exec =
-        create_executable(
-          "scsynth-arg-conflict",
-          "echo \"ERROR: There must be a -u and/or a -t options, or -N for nonrealtime.\""
-        )
+      with_test_server(:scsynth_no_port, fn pid ->
+        :ok = Server.boot(pid)
 
-      {:ok, pid} = Server.start_link(Config.new(executable: test_exec))
+        :timer.sleep(500)
 
-      :ok = Server.boot(pid)
-
-      :timer.sleep(500)
-
-      assert has_status(pid, :crashed)
-      assert has_error(pid, {:exit, :scsynth_invalid_args})
-      assert no_port(pid)
+        assert_status(pid, :crashed)
+        assert_error(pid, {:exit, :scsynth_invalid_args})
+        assert_no_port(pid)
+      end)
     end
   end
 
@@ -294,35 +263,32 @@ defmodule OscillEx.ServerTest do
     end
 
     test "returns ok when message sent successfully" do
-      test_exec = create_executable("long_running", "sleep 300")
-      {:ok, pid} = Server.start_link(Config.new(executable: test_exec))
+      with_test_server(:long_running, fn pid ->
+        :ok = Server.boot(pid)
 
-      :ok = Server.boot(pid)
-
-      # This should currently pass since the function always returns :ok
-      # But after implementing error handling, it should return :ok for successful sends
-      assert :ok = Server.send_osc_message(pid, <<1, 2, 3>>)
+        # This should currently pass since the function always returns :ok
+        # But after implementing error handling, it should return :ok for successful sends
+        assert :ok = Server.send_osc_message(pid, <<1, 2, 3>>)
+      end)
     end
   end
 
   describe "GenServer termination" do
     test "closes the port and UDP socket when the port is open" do
-      test_exec = create_executable("long_running", "sleep 300")
+      with_test_server(:long_running, fn pid ->
+        :ok = Server.boot(pid)
+        assert_has_open_port(pid)
+        assert_has_udp_socket(pid)
 
-      {:ok, pid} = Server.start_link(Config.new(executable: test_exec))
+        port = :sys.get_state(pid).port
+        udp_socket = :sys.get_state(pid).udp.socket
 
-      :ok = Server.boot(pid)
-      assert has_open_port(pid)
-      assert has_udp_socket(pid)
+        GenServer.stop(pid)
+        :timer.sleep(100)
 
-      port = :sys.get_state(pid).port
-      udp_socket = :sys.get_state(pid).udp.socket
-
-      GenServer.stop(pid)
-      :timer.sleep(100)
-
-      assert Port.info(port) == nil
-      assert Port.info(udp_socket) == nil
+        assert Port.info(port) == nil
+        assert Port.info(udp_socket) == nil
+      end)
     end
 
     test "does nothing when no process is running" do
@@ -336,136 +302,74 @@ defmodule OscillEx.ServerTest do
     test "server starts with no open connection" do
       {:ok, pid} = Server.start_link()
 
-      assert no_udp_socket(pid)
+      assert assert_no_udp_socket(pid)
     end
 
     test "is opened when the server boots" do
-      test_exec = create_executable("long_running", "sleep 300")
+      with_test_server(:long_running, fn pid ->
+        :ok = Server.boot(pid)
 
-      {:ok, pid} = Server.start_link(Config.new(executable: test_exec))
-
-      :ok = Server.boot(pid)
-
-      assert has_status(pid, :running)
-      assert has_udp_socket(pid)
+        assert_status(pid, :running)
+        assert_has_udp_socket(pid)
+      end)
     end
 
     test "is cleared when the server quits" do
-      test_exec = create_executable("long_running", "sleep 300")
+      with_test_server(:long_running, fn pid ->
+        :ok = Server.boot(pid)
+        :ok = Server.quit(pid)
 
-      {:ok, pid} = Server.start_link(Config.new(executable: test_exec))
-
-      :ok = Server.boot(pid)
-      :ok = Server.quit(pid)
-
-      assert has_status(pid, :stopped)
-      assert no_udp_socket(pid)
+        assert_status(pid, :stopped)
+        assert_no_udp_socket(pid)
+      end)
     end
 
     test "is cleared when the server crashes" do
-      test_exec = create_executable("crash", "exit 1")
+      with_test_server(:crash, fn pid ->
+        :ok = Server.boot(pid)
 
-      {:ok, pid} = Server.start_link(Config.new(executable: test_exec))
+        :timer.sleep(500)
 
-      :ok = Server.boot(pid)
-
-      :timer.sleep(500)
-
-      assert has_status(pid, :crashed)
-      assert no_udp_socket(pid)
+        assert_status(pid, :crashed)
+        assert_no_udp_socket(pid)
+      end)
     end
 
     test "stays clear when the scsynth server doesn't start" do
-      test_exec =
-        create_executable(
-          "scsynth-port-conflict",
-          "echo \"*** ERROR: failed to open socket: address in use.\""
-        )
+      with_test_server(:scsynth_port_in_use, fn pid ->
+        :ok = Server.boot(pid)
 
-      {:ok, pid} = Server.start_link(Config.new(executable: test_exec))
+        :timer.sleep(500)
 
-      :ok = Server.boot(pid)
-
-      :timer.sleep(500)
-
-      assert has_status(pid, :crashed)
-      assert no_udp_socket(pid)
+        assert_status(pid, :crashed)
+        assert_no_udp_socket(pid)
+      end)
     end
 
     test "is cleared when the executable crashes" do
-      test_exec = create_executable("long_running", "sleep 300")
+      with_test_server(:long_running, fn pid ->
+        :ok = Server.boot(pid)
 
-      {:ok, pid} = Server.start_link(Config.new(executable: test_exec))
+        port = :sys.get_state(pid).port
 
-      :ok = Server.boot(pid)
+        Port.close(port)
 
-      port = :sys.get_state(pid).port
-
-      Port.close(port)
-
-      assert has_status(pid, :crashed)
-      assert no_udp_socket(pid)
+        assert_status(pid, :crashed)
+        assert_no_udp_socket(pid)
+      end)
     end
 
     test "restarts if it closes, and the server keeps running" do
-      test_exec = create_executable("long_running", "sleep 300")
+      with_test_server(:long_running, fn pid ->
+        :ok = Server.boot(pid)
 
-      {:ok, pid} = Server.start_link(Config.new(executable: test_exec))
-      :ok = Server.boot(pid)
+        udp_socket = :sys.get_state(pid).udp.socket
 
-      udp_socket = :sys.get_state(pid).udp.socket
+        Port.close(udp_socket)
 
-      Port.close(udp_socket)
-
-      assert has_status(pid, :running)
-      assert has_udp_socket(pid)
+        assert_status(pid, :running)
+        assert_has_udp_socket(pid)
+      end)
     end
-  end
-
-  defp has_status(pid, status) do
-    assert :sys.get_state(pid).status == status
-  end
-
-  defp has_error(pid, error) do
-    assert :sys.get_state(pid).error == error
-  end
-
-  defp has_open_port(pid) do
-    port = :sys.get_state(pid).port
-    assert is_port(port)
-    assert is_list(Port.info(port))
-  end
-
-  defp no_port(pid) do
-    state = :sys.get_state(pid)
-    assert is_nil(state.port)
-    assert is_nil(state.monitor)
-  end
-
-  defp has_udp_socket(pid) do
-    state = :sys.get_state(pid)
-    assert is_map(state.udp)
-    assert is_port(state.udp.socket)
-    assert is_integer(state.udp.port)
-    assert is_reference(state.udp.monitor)
-  end
-
-  defp no_udp_socket(pid) do
-    state = :sys.get_state(pid)
-    assert is_nil(state.udp)
-  end
-
-  defp create_executable(name, contents) do
-    test_dir = Path.join(System.tmp_dir!(), "server_test_#{:rand.uniform(1_000_000)}")
-    :ok = File.mkdir_p(test_dir)
-    test_exec = Path.join(test_dir, name)
-    :ok = File.write(test_exec, "#!/bin/sh\n#{contents}")
-    :ok = File.chmod(test_exec, 0o744)
-
-    ExUnit.Callbacks.on_exit(fn ->
-      {:ok, _} = File.rm_rf(test_dir)
-    end)
-
-    test_exec
   end
 end
