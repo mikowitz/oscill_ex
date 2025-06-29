@@ -2,6 +2,7 @@ defmodule OscillEx.Server do
   @moduledoc """
   Manages a port running a configurable instance of `scsynth`
   """
+  alias OscillEx.Scsynth
   alias OscillEx.Server.Config
   alias OscillEx.UdpSocket
 
@@ -136,13 +137,14 @@ defmodule OscillEx.Server do
   @impl GenServer
   def handle_info({port, {:exit_status, exit_code}}, %__MODULE__{port: port} = state) do
     new_state = close_port(state) |> close_udp_socket()
+    error = Scsynth.handle_exit_status(exit_code)
 
     case exit_code do
       0 ->
-        {:noreply, set_status(new_state, :stopped)}
+        {:noreply, set_status(new_state, :stopped, error)}
 
       _ ->
-        {:noreply, new_state |> set_status(:crashed, {:exit, exit_code})}
+        {:noreply, new_state |> set_status(:crashed, error)}
     end
   end
 
@@ -157,7 +159,8 @@ defmodule OscillEx.Server do
   end
 
   def handle_info({:DOWN, _, :port, port, reason}, %__MODULE__{port: port} = state) do
-    new_state = close_port(state) |> close_udp_socket() |> set_status(:crashed, {:exit, reason})
+    error = Scsynth.handle_port_down(reason)
+    new_state = close_port(state) |> close_udp_socket() |> set_status(:crashed, error)
     {:noreply, new_state}
   end
 
@@ -261,11 +264,7 @@ defmodule OscillEx.Server do
   defp set_status(state, status, error \\ nil), do: %{state | status: status, error: error}
 
   defp handle_scsynth_error(data) do
-    cond do
-      data =~ ~r/ERROR.*address in use/ -> {:error, :scsynth_port_in_use}
-      data =~ ~r/ERROR.*(There must be a -u|Invalid option)/ -> {:error, :scsynth_invalid_args}
-      true -> :ok
-    end
+    Scsynth.parse_scsynth_error(data)
   end
 
   defp open_port(config) do
