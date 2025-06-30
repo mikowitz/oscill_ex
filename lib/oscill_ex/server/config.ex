@@ -128,7 +128,7 @@ defmodule OscillEx.Server.Config do
 
   ## Examples
 
-      # Default configuration
+      # Default `scsynth` configuration
       config = Config.new()
 
       # Custom port and audio settings

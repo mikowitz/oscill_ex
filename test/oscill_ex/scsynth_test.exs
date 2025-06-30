@@ -8,17 +8,16 @@ defmodule OscillEx.ScsynthTest do
 
   describe "start_process/1" do
     test "successfully starts a process with valid executable" do
-      executable = create_executable(:long_running)
-      config = Config.new(executable: executable)
+      with_test_config(fn config ->
+        assert {:ok, port, monitor} = Scsynth.start_process(config)
+        assert is_port(port)
+        assert is_reference(monitor)
+        assert Port.info(port) != nil
 
-      assert {:ok, port, monitor} = Scsynth.start_process(config)
-      assert is_port(port)
-      assert is_reference(monitor)
-      assert Port.info(port) != nil
-
-      # Cleanup
-      Port.demonitor(monitor, [:flush])
-      Port.close(port)
+        # Cleanup
+        Port.demonitor(monitor, [:flush])
+        Port.close(port)
+      end)
     end
 
     test "returns error when executable doesn't exist" do
@@ -50,46 +49,48 @@ defmodule OscillEx.ScsynthTest do
     end
 
     test "passes correct arguments to the process" do
-      executable = create_executable(:capture_args)
-      config = Config.new(executable: executable, port: 57110)
+      with_test_config(:capture_args, fn config ->
+        {:ok, _port, monitor} = Scsynth.start_process(config)
 
-      {:ok, _port, monitor} = Scsynth.start_process(config)
+        # Wait for the process to complete and write args
+        :timer.sleep(500)
 
-      # Wait for the process to complete and write args
-      :timer.sleep(500)
+        assert File.read!("args_output") == "-u 57110 -R 0 -l 1"
 
-      assert File.read!("args_output") == "-u 57110 -R 0 -l 1"
+        # Ensure args aren't removed too quickly
+        :timer.sleep(10)
 
-      # Cleanup
-      Port.demonitor(monitor, [:flush])
-      on_exit(fn -> File.rm("args_output") end)
+        # Cleanup
+        Port.demonitor(monitor, [:flush])
+        on_exit(fn -> File.rm("args_output") end)
+      end)
     end
   end
 
   describe "stop_process/2" do
     test "closes port and demonitors when port is alive" do
-      executable = create_executable(:long_running)
-      config = Config.new(executable: executable)
-      {:ok, port, monitor} = Scsynth.start_process(config)
+      with_test_config(fn config ->
+        {:ok, port, monitor} = Scsynth.start_process(config)
 
-      assert is_port(port)
-      assert is_reference(monitor)
-      assert Port.info(port) != nil
+        assert is_port(port)
+        assert is_reference(monitor)
+        assert Port.info(port) != nil
 
-      :ok = Scsynth.stop_process(port, monitor)
+        :ok = Scsynth.stop_process(port, monitor)
 
-      assert Port.info(port) == nil
+        assert Port.info(port) == nil
+      end)
     end
 
     test "handles already closed port gracefully" do
-      executable = create_executable(:long_running)
-      config = Config.new(executable: executable)
-      {:ok, port, monitor} = Scsynth.start_process(config)
+      with_test_config(fn config ->
+        {:ok, port, monitor} = Scsynth.start_process(config)
 
-      Port.close(port)
+        Port.close(port)
 
-      # Should not raise error even if port is already closed
-      assert :ok = Scsynth.stop_process(port, monitor)
+        # Should not raise error even if port is already closed
+        assert :ok = Scsynth.stop_process(port, monitor)
+      end)
     end
 
     test "handles nil port and monitor gracefully" do
@@ -97,21 +98,21 @@ defmodule OscillEx.ScsynthTest do
     end
 
     test "handles only nil port gracefully" do
-      executable = create_executable(:long_running)
-      config = Config.new(executable: executable)
-      {:ok, _port, monitor} = Scsynth.start_process(config)
+      with_test_config(fn config ->
+        {:ok, _port, monitor} = Scsynth.start_process(config)
 
-      assert :ok = Scsynth.stop_process(nil, monitor)
+        assert :ok = Scsynth.stop_process(nil, monitor)
+      end)
     end
 
     test "handles only nil monitor gracefully" do
-      executable = create_executable(:long_running)
-      config = Config.new(executable: executable)
-      {:ok, port, _monitor} = Scsynth.start_process(config)
+      with_test_config(fn config ->
+        {:ok, port, _monitor} = Scsynth.start_process(config)
 
-      assert :ok = Scsynth.stop_process(port, nil)
-      # Ensure port is still closed
-      assert Port.info(port) == nil
+        assert :ok = Scsynth.stop_process(port, nil)
+        # Ensure port is still closed
+        assert Port.info(port) == nil
+      end)
     end
   end
 
@@ -262,23 +263,23 @@ defmodule OscillEx.ScsynthTest do
     end
 
     test "handles concurrent process starts" do
-      executable = create_executable(:long_running)
-      config = Config.new(executable: executable)
+      with_test_config(fn config ->
+        tasks =
+          for _i <- 1..3 do
+            Task.async(fn -> Scsynth.start_process(config) end)
+          end
+
+        results = Task.await_many(tasks, 5000)
+
+        # All should succeed
+        for {:ok, port, monitor} <- results do
+          assert is_port(port)
+          assert is_reference(monitor)
+          Scsynth.stop_process(port, monitor)
+        end
+      end)
 
       # Start multiple processes concurrently
-      tasks =
-        for _i <- 1..3 do
-          Task.async(fn -> Scsynth.start_process(config) end)
-        end
-
-      results = Task.await_many(tasks, 5000)
-
-      # All should succeed
-      for {:ok, port, monitor} <- results do
-        assert is_port(port)
-        assert is_reference(monitor)
-        Scsynth.stop_process(port, monitor)
-      end
     end
 
     test "handles malformed scsynth error messages" do

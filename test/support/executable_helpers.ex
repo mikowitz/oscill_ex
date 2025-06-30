@@ -4,6 +4,13 @@ defmodule OscillEx.Test.Support.ExecutableHelpers do
   alias OscillEx.Server
   alias OscillEx.Server.Config
 
+  def with_test_config(mode \\ :long_running, test_func) do
+    executable = create_executable(mode)
+    config = Config.new(executable: executable)
+
+    test_func.(config)
+  end
+
   def with_test_server(mode \\ :long_running, test_func) do
     test_exec = create_executable(mode)
     {:ok, pid} = Server.start_link(Config.new(executable: test_exec))

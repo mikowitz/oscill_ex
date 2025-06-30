@@ -23,3 +23,5 @@ oscill_ex-*.tar
 /tmp/
 
 /notes/
+/priv/plts/*.plt
+/priv/plts/*.plt.hash

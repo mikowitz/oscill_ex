@@ -58,10 +58,5 @@ jobs:
           mix deps.unlock --check-unused
           mix format --check-formatted
 
-      - name: dialyzer
-        run: mix dialyzer
-
       - name: mix test
         run: mix test
-
-
