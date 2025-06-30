@@ -66,4 +66,22 @@ defmodule OscillEx.Test.Support.ExecutableHelpers do
 
     test_exec
   end
+
+  def wait_for_condition(condition_fun, timeout, description \\ "Condition") do
+    end_time = System.monotonic_time(:millisecond) + timeout
+    wait_for_condition_loop(condition_fun, end_time, description)
+  end
+
+  defp wait_for_condition_loop(condition_fun, end_time, description) do
+    if condition_fun.() do
+      :ok
+    else
+      if System.monotonic_time(:millisecond) >= end_time do
+        {:error, :timeout, description}
+      else
+        :timer.sleep(10)
+        wait_for_condition_loop(condition_fun, end_time, description)
+      end
+    end
+  end
 end

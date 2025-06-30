@@ -183,15 +183,19 @@ defmodule OscillEx.ServerTest do
       with_test_server(:capture_args, fn pid ->
         :ok = Server.boot(pid)
 
-        :timer.sleep(500)
+        :timer.sleep(1000)
+
+        wait_for_condition(
+          fn -> :sys.get_state(pid).status == :stopped end,
+          5000,
+          "Expected status: :stopped"
+        )
 
         assert_status(pid, :stopped)
 
         assert File.read!("args_output") == "-u 57110 -R 0 -l 1"
 
-        on_exit(fn ->
-          :ok = File.rm("args_output")
-        end)
+        on_exit(fn -> :ok = File.rm("args_output") end)
       end)
     end
   end

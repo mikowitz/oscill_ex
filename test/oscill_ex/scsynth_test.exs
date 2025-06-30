@@ -50,15 +50,17 @@ defmodule OscillEx.ScsynthTest do
 
     test "passes correct arguments to the process" do
       with_test_config(:capture_args, fn config ->
-        {:ok, _port, monitor} = Scsynth.start_process(config)
+        {:ok, port, monitor} = Scsynth.start_process(config)
 
-        # Wait for the process to complete and write args
-        :timer.sleep(500)
+        wait_for_condition(
+          fn -> Port.info(port) == nil end,
+          5000,
+          "Expected port to have closed"
+        )
+
+        assert Port.info(port) == nil
 
         assert File.read!("args_output") == "-u 57110 -R 0 -l 1"
-
-        # Ensure args aren't removed too quickly
-        :timer.sleep(10)
 
         # Cleanup
         Port.demonitor(monitor, [:flush])
