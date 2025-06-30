@@ -79,4 +79,14 @@ defmodule OscillEx.Scsynth do
 
     {:ok, port, monitor}
   end
+
+  def close_port(port, monitor) do
+    if is_reference(monitor), do: Port.demonitor(monitor, [:flush])
+
+    if is_port(port) and Port.info(port) != nil do
+      Port.close(port)
+    end
+
+    nil
+  end
 end

@@ -104,9 +104,8 @@ defmodule OscillEx.Server do
 
   def handle_call(:boot, _, %{config: config} = state) do
     {reply, new_state} =
-      case validate_executable(config.executable) do
-        :ok ->
-          {:ok, port, monitor} = open_port(config)
+      case Scsynth.start_process(config) do
+        {:ok, port, monitor} ->
           {:ok, udp} = UdpSocket.open()
 
           {:ok,
@@ -176,7 +175,7 @@ defmodule OscillEx.Server do
 
   def handle_info({port, {:data, data}}, %__MODULE__{port: port} = state) do
     new_state =
-      case handle_scsynth_error(data) do
+      case Scsynth.parse_scsynth_error(data) do
         :ok ->
           state
 
@@ -219,37 +218,8 @@ defmodule OscillEx.Server do
     :ok
   end
 
-  defp validate_executable(executable) do
-    case File.stat(executable) do
-      {:ok, %File.Stat{type: :regular}} ->
-        if can_execute?(executable) do
-          :ok
-        else
-          {:error, {:permission_denied, executable}}
-        end
-
-      {:ok, %File.Stat{type: type}} ->
-        {:error, {:not_executable, "#{executable} is a #{type}, not an executable file"}}
-
-      {:error, :enoent} ->
-        {:error, {:file_not_found, executable}}
-    end
-  end
-
-  defp can_execute?(executable) do
-    case System.cmd("test", ["-x", executable]) do
-      {_, 0} -> true
-      _ -> false
-    end
-  end
-
-  defp close_port(%__MODULE__{monitor: monitor, port: port} = state) when is_reference(monitor) do
-    Port.demonitor(monitor, [:flush])
-
-    if is_port(port) and Port.info(port) != nil do
-      Port.close(port)
-    end
-
+  defp close_port(%__MODULE__{monitor: monitor, port: port} = state) do
+    Scsynth.close_port(port, monitor)
     %{state | monitor: nil, port: nil}
   end
 
@@ -262,26 +232,4 @@ defmodule OscillEx.Server do
   defp normalize_config(config), do: struct(Config, Enum.into(config, %{}))
 
   defp set_status(state, status, error \\ nil), do: %{state | status: status, error: error}
-
-  defp handle_scsynth_error(data) do
-    Scsynth.parse_scsynth_error(data)
-  end
-
-  defp open_port(config) do
-    args = Config.command_line_args(config)
-
-    port =
-      Port.open(
-        {:spawn_executable, "./bin/wrapper"},
-        [
-          {:args, args},
-          :binary,
-          :exit_status
-        ]
-      )
-
-    monitor = Port.monitor(port)
-
-    {:ok, port, monitor}
-  end
 end
