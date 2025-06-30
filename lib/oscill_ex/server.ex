@@ -1,6 +1,52 @@
 defmodule OscillEx.Server do
   @moduledoc """
-  Manages a port running a configurable instance of `scsynth`
+  A GenServer that manages a configurable `scsynth` process with OSC communication.
+
+  This module provides a complete lifecycle management for SuperCollider's synthesis
+  server (`scsynth`), including process spawning, UDP socket management, and OSC
+  message handling. The server maintains a state machine with proper error handling
+  and crash recovery.
+
+  ## Usage
+
+      # Start a server with default configuration
+      {:ok, pid} = OscillEx.Server.start_link()
+
+      # Start with custom configuration
+      config = %OscillEx.Server.Config{
+        port: 57120,
+        ip_address: {127, 0, 0, 1},
+        num_audio_bus_channels: 128
+      }
+      {:ok, pid} = OscillEx.Server.start_link(config)
+
+      # Boot the scsynth process
+      :ok = OscillEx.Server.boot(pid)
+
+      # Send OSC messages
+      message = <<...>>  # OSC-formatted binary data
+      :ok = OscillEx.Server.send_osc_message(pid, message)
+
+      # Shut down the server
+      :ok = OscillEx.Server.quit(pid)
+
+  ## State Machine
+
+  The server operates in the following states:
+
+  - `:stopped` - Initial state, no processes running
+  - `:running` - scsynth process and UDP socket are active
+  - `:error` - Failed to start due to configuration or system error
+  - `:crashed` - Process terminated unexpectedly
+
+  ## Error Handling
+
+  The server handles various failure scenarios:
+
+  - Invalid executable paths or permissions
+  - Port conflicts and network errors
+  - Process crashes and unexpected termination
+  - UDP socket failures with automatic recovery
   """
   alias OscillEx.Scsynth
   alias OscillEx.Server.Config
@@ -17,8 +63,9 @@ defmodule OscillEx.Server do
             config: nil,
             udp: nil
 
+  @type server_status :: :stopped | :running | :error | :crashed
   @type t :: %__MODULE__{
-          status: :stopped | :booting | :error | :crashed,
+          status: server_status(),
           error: term() | nil,
           port: port() | nil,
           monitor: reference() | nil,
@@ -30,15 +77,90 @@ defmodule OscillEx.Server do
   ## API ##
   #########
 
-  def start_link(config \\ Config.new(publish_to_rendezvous: false, max_logins: 1)) do
+  @doc """
+  Starts a new Server GenServer process.
+
+  ## Parameters
+
+  - `config` - Server configuration. Can be a `Config` struct, map, or keyword list.
+    Defaults to a basic configuration suitable for local development.
+
+  ## Returns
+
+  - `{:ok, pid}` - Server process started successfully
+  - `{:error, reason}` - Failed to start the GenServer
+
+  ## Examples
+
+      # Start with default configuration
+      {:ok, pid} = Server.start_link()
+
+      # Start with custom config struct
+      config = %Config{port: 57121, num_audio_bus_channels: 64}
+      {:ok, pid} = Server.start_link(config)
+
+      # Start with keyword list
+      {:ok, pid} = Server.start_link(port: 57122, ip_address: {192, 168, 1, 100})
+  """
+  @spec start_link(Config.t() | map() | keyword()) :: GenServer.on_start()
+  def start_link(config \\ Config.default()) do
     config = normalize_config(config)
     GenServer.start_link(__MODULE__, config)
   end
 
+  @doc """
+  Boots the scsynth process and establishes UDP communication.
+
+  This starts the external `scsynth` executable with the configured parameters
+  and opens a UDP socket for OSC message communication.
+
+  ## Parameters
+
+  - `pid` - The Server process identifier
+
+  ## Returns
+
+  - `:ok` - Server booted successfully and is now running
+  - `{:error, :already_running}` - Server is already booted or booting
+  - `{:error, reason}` - Boot failed due to system error, invalid config, etc.
+
+  ## Examples
+
+      {:ok, pid} = Server.start_link()
+      :ok = Server.boot(pid)
+
+      # Attempting to boot an already running server
+      {:error, :already_running} = Server.boot(pid)
+  """
+  @spec boot(pid()) :: :ok | {:error, atom()}
   def boot(pid) do
     GenServer.call(pid, :boot)
   end
 
+  @doc """
+  Gracefully shuts down the scsynth process and closes the UDP socket.
+
+  This terminates the running `scsynth` process and cleans up all associated
+  resources including the UDP socket and port monitors.
+
+  ## Parameters
+
+  - `pid` - The Server process identifier
+
+  ## Returns
+
+  - `:ok` - Server shut down successfully
+
+  ## Examples
+
+      {:ok, pid} = Server.start_link()
+      Server.boot(pid)
+      :ok = Server.quit(pid)
+
+      # Quitting an already stopped server is safe
+      :ok = Server.quit(pid)
+  """
+  @spec quit(pid()) :: :ok
   def quit(pid) do
     GenServer.call(pid, :quit)
   end

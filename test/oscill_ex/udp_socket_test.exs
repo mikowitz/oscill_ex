@@ -14,7 +14,7 @@ defmodule OscillEx.UdpSocketTest do
       assert Port.info(udp.socket) != nil
 
       # Clean up
-      UdpSocket.close(udp)
+      :ok = UdpSocket.close(udp)
     end
 
     test "returns a valid UDP socket struct" do
@@ -26,7 +26,7 @@ defmodule OscillEx.UdpSocketTest do
       assert socket_info[:mode] == :binary
 
       # Clean up
-      UdpSocket.close(udp)
+      :ok = UdpSocket.close(udp)
     end
 
     test "assigns a random available port" do
@@ -39,8 +39,8 @@ defmodule OscillEx.UdpSocketTest do
       assert udp2.port > 0
 
       # Clean up
-      UdpSocket.close(udp1)
-      UdpSocket.close(udp2)
+      :ok = UdpSocket.close(udp1)
+      :ok = UdpSocket.close(udp2)
     end
   end
 
@@ -51,15 +51,12 @@ defmodule OscillEx.UdpSocketTest do
 
       assert Port.info(socket) != nil
 
-      result = UdpSocket.close(udp)
-
-      assert result == nil
+      :ok = UdpSocket.close(udp)
       assert Port.info(socket) == nil
     end
 
     test "handles nil input gracefully" do
-      result = UdpSocket.close(nil)
-      assert result == nil
+      assert UdpSocket.close(nil) == :ok
     end
 
     test "handles already closed socket gracefully" do
@@ -69,8 +66,7 @@ defmodule OscillEx.UdpSocketTest do
       Port.close(udp.socket)
 
       # UdpSocket.close should still work without error
-      result = UdpSocket.close(udp)
-      assert result == nil
+      assert UdpSocket.close(udp) == :ok
     end
 
     test "demonitors the socket properly" do
@@ -80,7 +76,7 @@ defmodule OscillEx.UdpSocketTest do
       # Verify monitor is active
       assert is_reference(monitor)
 
-      UdpSocket.close(udp)
+      :ok = UdpSocket.close(udp)
 
       # The monitor should be flushed, but we can't easily test this
       # without more complex setup. The important thing is no crash occurs.
@@ -109,7 +105,7 @@ defmodule OscillEx.UdpSocketTest do
       assert result == :ok
 
       # Clean up
-      UdpSocket.close(udp)
+      :ok = UdpSocket.close(udp)
     end
 
     test "returns error for invalid host" do
@@ -122,7 +118,7 @@ defmodule OscillEx.UdpSocketTest do
       assert {:error, _reason} = result
 
       # Clean up
-      UdpSocket.close(udp)
+      :ok = UdpSocket.close(udp)
     end
 
     test "converts string host to charlist internally" do
@@ -135,7 +131,7 @@ defmodule OscillEx.UdpSocketTest do
       assert result == :ok
 
       # Clean up
-      UdpSocket.close(udp)
+      :ok = UdpSocket.close(udp)
     end
   end
 
@@ -152,8 +148,7 @@ defmodule OscillEx.UdpSocketTest do
       assert result == :ok
 
       # Should close cleanly
-      close_result = UdpSocket.close(udp)
-      assert close_result == nil
+      :ok = UdpSocket.close(udp)
       assert Port.info(udp.socket) == nil
     end
 
@@ -166,8 +161,8 @@ defmodule OscillEx.UdpSocketTest do
       assert UdpSocket.send_message(udp2.socket, "127.0.0.1", 12345, "test2") == :ok
 
       # Clean up
-      UdpSocket.close(udp1)
-      UdpSocket.close(udp2)
+      :ok = UdpSocket.close(udp1)
+      :ok = UdpSocket.close(udp2)
     end
   end
 end
