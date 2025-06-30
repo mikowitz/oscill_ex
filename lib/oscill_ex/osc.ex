@@ -12,7 +12,7 @@ defmodule OscillEx.Osc do
           [] ->
             {:ok, pad(address)}
 
-          [_ | _] ->
+          p when is_list(p) ->
             with({:ok, type_tag, encoded_params} <- params_to_osc(params)) do
               result = pad(address) <> pad(type_tag) <> encoded_params
               {:ok, result}
@@ -29,29 +29,32 @@ defmodule OscillEx.Osc do
 
   def message(_address, _params), do: {:error, :invalid_address}
 
-  defp params_to_osc([]), do: {:ok, <<>>, <<>>}
-
-  defp params_to_osc(params) do
-    params_to_osc(params, [","], [])
-  end
+  @spec params_to_osc(list()) ::
+          {:ok, String.t(), String.t()} | {:error, {:unsupported_type, term()}}
+  defp params_to_osc([]), do: {:ok, "", ""}
+  defp params_to_osc(params), do: params_to_osc(params, [","], [])
 
   defp params_to_osc([], type_tags, encoded_params) do
-    {:ok, Enum.join(type_tags, ""), Enum.join(encoded_params, "")}
+    {:ok, Enum.join(Enum.reverse(type_tags), ""), Enum.join(Enum.reverse(encoded_params), "")}
   end
 
   defp params_to_osc([i | params], type_tags, encoded_params) when is_integer(i) do
-    params_to_osc(params, type_tags ++ ["i"], encoded_params ++ [<<i::big-signed-size(32)>>])
+    params_to_osc(params, ["i" | type_tags], [<<i::big-signed-size(32)>> | encoded_params])
   end
 
   defp params_to_osc([f | params], type_tags, encoded_params) when is_float(f) do
-    params_to_osc(params, type_tags ++ ["f"], encoded_params ++ [<<f::big-float-size(32)>>])
+    params_to_osc(params, ["f" | type_tags], [<<f::big-float-size(32)>> | encoded_params])
   end
 
   defp params_to_osc([s | params], type_tags, encoded_params) when is_binary(s) do
     if ascii_string?(s) do
-      params_to_osc(params, type_tags ++ ["s"], encoded_params ++ [pad(s)])
+      params_to_osc(params, ["s" | type_tags], [pad(s) | encoded_params])
     else
-      {:error, {:invalid_string, s}}
+      params_to_osc(
+        params,
+        ["b" | type_tags],
+        [<<byte_size(s)::big-size(32), s::binary>> | encoded_params]
+      )
     end
   end
 
@@ -59,8 +62,11 @@ defmodule OscillEx.Osc do
 
   defp ascii_string?(s) do
     s
-    |> to_charlist()
-    |> Enum.all?(&(&1 >= 32 && &1 <= 127))
+    |> String.codepoints()
+    |> Enum.all?(fn
+      <<c>> -> c >= 32 && c <= 126
+      <<_, _>> -> false
+    end)
   end
 
   defp pad(s) when is_binary(s) do

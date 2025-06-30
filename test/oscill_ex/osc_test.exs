@@ -132,16 +132,20 @@ defmodule OscillEx.OscTest do
       assert {:error, {:unsupported_type, {1, 2}}} = Osc.message("/test", [{1, 2}])
     end
 
-    test "returns error for non-printable string" do
+    test "returns a blob for a non-ascii string" do
       non_printable = "hello\x00world"
-      assert {:error, {:invalid_string, ^non_printable}} = Osc.message("/test", [non_printable])
+
+      assert {:ok, message} = Osc.message("/test", [non_printable])
+      expected = "/test" <> <<0, 0, 0>> <> ",b" <> <<0, 0>> <> <<0, 0, 0, 11>> <> non_printable
+      assert message == expected
     end
 
-    test "returns error for binary with null bytes" do
+    test "returns a blob for a binary with null bytes" do
       binary_with_null = <<104, 101, 108, 108, 111, 0, 119, 111, 114, 108, 100>>
 
-      assert {:error, {:invalid_string, ^binary_with_null}} =
-               Osc.message("/test", [binary_with_null])
+      assert {:ok, message} = Osc.message("/test", [binary_with_null])
+      expected = "/test" <> <<0, 0, 0>> <> ",b" <> <<0, 0>> <> <<0, 0, 0, 11>> <> binary_with_null
+      assert message == expected
     end
   end
 
@@ -201,9 +205,26 @@ defmodule OscillEx.OscTest do
       assert {:error, :invalid_address} == Osc.message("/tëst")
     end
 
-    # TODO: this will be valid when supporting blobs
-    test "creates message with unicode characters in string argument" do
-      assert {:error, {:invalid_string, "hëllö"}} = Osc.message("/test", ["hëllö"])
+    test "creates message with blob argument (non-ASCII binary)" do
+      blob_data = <<0xFF, 0xFE, 0xFD, 0xFC>>
+      assert {:ok, message} = Osc.message("/test", [blob_data])
+      # Address "/test" padded + type tag ",b" padded + blob size (4) + blob data padded
+      expected = "/test" <> <<0, 0, 0>> <> ",b" <> <<0, 0>> <> <<0, 0, 0, 4>> <> blob_data
+      assert message == expected
+    end
+
+    test "creates message with unicode characters as blob" do
+      unicode_blob = "hëllö"
+      assert {:ok, message} = Osc.message("/test", [unicode_blob])
+      blob_size = byte_size(unicode_blob)
+
+      # Address "/test" padded + type tag ",b" padded + blob size + blob data
+      expected =
+        "/test" <>
+          <<0, 0, 0>> <>
+          ",b" <> <<0, 0>> <> <<blob_size::big-unsigned-size(32)>> <> unicode_blob
+
+      assert message == expected
     end
 
     test "creates message with float zero" do
@@ -215,6 +236,59 @@ defmodule OscillEx.OscTest do
     test "creates message with negative float" do
       assert {:ok, message} = Osc.message("/test", [-1.0])
       expected = "/test" <> <<0, 0, 0>> <> ",f" <> <<0, 0>> <> <<191, 128, 0, 0>>
+      assert message == expected
+    end
+  end
+
+  describe "OSC blob support" do
+    test "creates message with blob that is not a length of multiple of 4" do
+      blob_data = <<0xFF, 0xFE, 0xFD>>
+      assert {:ok, message} = Osc.message("/test", [blob_data])
+
+      expected =
+        "/test" <> <<0, 0, 0>> <> ",b" <> <<0, 0>> <> <<0, 0, 0, 3>> <> blob_data
+
+      assert message == expected
+    end
+
+    test "creates message with blob that has a length of multiple of 4" do
+      # 4-byte blob should not need additional padding
+      blob_data = <<0xFF, 0xFE, 0xFD, 0xFC>>
+      assert {:ok, message} = Osc.message("/test", [blob_data])
+      expected = "/test" <> <<0, 0, 0>> <> ",b" <> <<0, 0>> <> <<0, 0, 0, 4>> <> blob_data
+      assert message == expected
+    end
+
+    test "creates message with large blob" do
+      large_blob = :crypto.strong_rand_bytes(100)
+      assert {:ok, message} = Osc.message("/test", [large_blob])
+      # Should contain blob type tag and size header
+      assert String.contains?(message, ",b")
+      # Message should include the blob size (100) as big-endian 32-bit int
+      assert String.contains?(message, <<0, 0, 0, 100>>)
+      # Should contain the blob data
+      assert String.contains?(message, large_blob)
+    end
+
+    test "creates message with mixed arguments including blob" do
+      blob_data = <<0xCA, 0xFE, 0xBA, 0xBE>>
+      assert {:ok, message} = Osc.message("/synth", [440, blob_data, "wave"])
+      # Should contain type tag for int, blob, string
+      assert String.contains?(message, ",ibs")
+      # Should contain all the data
+      # 440 as big-endian int
+      assert String.contains?(message, <<0, 0, 1, 184>>)
+      # blob size
+      assert String.contains?(message, <<0, 0, 0, 4>>)
+      assert String.contains?(message, blob_data)
+      assert String.contains?(message, "wave")
+    end
+
+    test "creates message with binary containing null bytes as blob" do
+      blob_with_nulls = <<0x48, 0x00, 0x65, 0x00, 0x6C, 0x00, 0x6C, 0x00>>
+      assert {:ok, message} = Osc.message("/test", [blob_with_nulls])
+      # Should be treated as blob, not invalid string
+      expected = "/test" <> <<0, 0, 0>> <> ",b" <> <<0, 0>> <> <<0, 0, 0, 8>> <> blob_with_nulls
       assert message == expected
     end
   end
