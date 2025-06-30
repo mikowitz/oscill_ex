@@ -28,38 +28,76 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### Core Components
 
 **OscillEx.Server** (`lib/oscill_ex/server.ex`)
-- GenServer that manages a configurable `scsynth` process
-- Handles process lifecycle (boot, quit, crash recovery)
-- Manages UDP socket for OSC communication
-- State machine with statuses: `:stopped`, `:booting`, `:running`, `:error`, `:crashed`
+- GenServer that manages a configurable `scsynth` process with complete lifecycle management
+- Handles process lifecycle (boot, quit, crash recovery) with proper state transitions
+- Manages UDP socket for OSC communication with automatic recovery
+- State machine with statuses: `:stopped`, `:running`, `:error`, `:crashed`
+- Provides public API: `start_link/1`, `boot/1`, `quit/1`, `send_osc_message/2`
+- Comprehensive documentation with usage examples and error handling patterns
 
 **OscillEx.Server.Config** (`lib/oscill_ex/server/config.ex`)
-- Configuration struct for `scsynth` server parameters
-- Generates command-line arguments for the `scsynth` executable
-- Supports both UDP and TCP protocols
-- Extensive configuration options for audio settings, buffers, and network parameters
+- Configuration struct for `scsynth` server parameters with extensive options
+- Generates command-line arguments for the `scsynth` executable with smart defaults
+- Supports both UDP and TCP protocols with type-safe configuration
+- Comprehensive configuration categories: Network, Audio, Resource Limits, Security & Access
+- Public API: `new/1`, `default/0`, `command_line_args/1`
+- Full documentation of all configuration options and their defaults
+
+**OscillEx.Scsynth** (`lib/oscill_ex/scsynth.ex`)
+- Low-level process management for external `scsynth` processes
+- Handles executable validation, spawning, monitoring, and cleanup
+- Provides structured error handling for common failure scenarios
+- Parses `scsynth` stderr output for meaningful error identification
+- Public API: `start_process/1`, `stop_process/2`, `close_port/2`, error handling functions
+- Uses wrapper script (`./bin/wrapper`) for consistent process spawning
+
+**OscillEx.UdpSocket** (`lib/oscill_ex/udp_socket.ex`)
+- UDP socket management for OSC (Open Sound Control) communication
+- Handles socket lifecycle with automatic monitoring and cleanup
+- Provides simple interface for OSC message transmission
+- Socket represented as map with `socket`, `port`, and `monitor` fields
+- Public API: `open/0`, `close/1`, `send_message/4`
+- Active mode sockets for real-time message reception
 
 ### Key Patterns
 
+**Layered Architecture**
+- High-level GenServer (`OscillEx.Server`) for user-facing API and state management
+- Mid-level process management (`OscillEx.Scsynth`) for `scsynth` lifecycle
+- Low-level transport (`OscillEx.UdpSocket`) for OSC communication
+- Configuration layer (`OscillEx.Server.Config`) with comprehensive options
+
 **Port Management**
-- Uses Erlang ports to spawn and monitor external `scsynth` processes
-- Implements proper cleanup on process termination
-- Handles various exit scenarios and error conditions
+- Uses Erlang ports to spawn and monitor external `scsynth` processes via wrapper script
+- Implements proper cleanup on process termination with demonitor and port closure
+- Handles various exit scenarios and error conditions with structured error terms
+- Separates concerns between process spawning and socket management
 
 **UDP Transport Layer**
 - Opens dynamic UDP socket on boot for OSC message communication
 - Automatically restarts UDP socket if it crashes while server is running
 - Monitors both the main process port and UDP socket independently
+- Active mode sockets for real-time bidirectional communication
 
 **Error Handling**
-- Validates executable existence and permissions before starting
-- Parses `scsynth` error messages to provide specific error reasons
-- Graceful handling of port conflicts and invalid arguments
+- Multi-level error handling from executable validation to runtime errors
+- Validates executable existence, type, and permissions before starting
+- Parses `scsynth` stderr output to provide specific, actionable error reasons
+- Graceful handling of port conflicts, invalid arguments, and process crashes
+- Structured error terms for consistent error propagation
 
-**Configuration**
+**Configuration Management**
 - Flexible configuration accepting structs, maps, or keyword lists
-- Command-line argument generation with smart defaults
-- Type-safe configuration with comprehensive @type specifications
+- Command-line argument generation with smart defaults (omits default values)
+- Type-safe configuration with comprehensive `@type` specifications
+- Categorized options: Network, Audio, Resource Limits, Security & Access
+- Development-friendly defaults via `Config.default/0`
+
+**Documentation Standards**
+- Comprehensive `@moduledoc` with usage examples and architecture explanations
+- Complete `@spec` type specifications for all public functions
+- Detailed function documentation with parameters, returns, and examples
+- Error case documentation with specific error terms and scenarios
 
 ## Code Style Guidelines
 
