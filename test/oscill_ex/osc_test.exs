@@ -6,22 +6,22 @@ defmodule OscillEx.OscTest do
   describe "message/1" do
     test "creates message with valid address and no arguments" do
       assert {:ok, message} = Osc.message("/test")
-      # Address "/test" padded to 8 bytes + type tag "," padded to 4 bytes
-      expected = "/test" <> <<0, 0, 0>> <> "," <> <<0, 0, 0>>
+      # Address "/test" padded to 8 bytes
+      expected = "/test" <> <<0, 0, 0>>
       assert message == expected
     end
 
     test "creates message with root address pattern" do
       assert {:ok, message} = Osc.message("/")
-      # Address "/" padded to 4 bytes + type tag "," padded to 4 bytes
-      expected = "/" <> <<0, 0, 0>> <> "," <> <<0, 0, 0>>
+      # Address "/" padded to 4 bytes
+      expected = "/" <> <<0, 0, 0>>
       assert message == expected
     end
 
     test "creates message with nested address pattern" do
       assert {:ok, message} = Osc.message("/synth/osc/freq")
-      # Address "/synth/osc/freq" (16 chars) padded to 16 bytes + type tag "," padded to 4 bytes
-      expected = "/synth/osc/freq" <> <<0>> <> "," <> <<0, 0, 0>>
+      # Address "/synth/osc/freq" (16 chars) padded to 16 bytes
+      expected = "/synth/osc/freq" <> <<0>>
       assert message == expected
     end
 
@@ -63,7 +63,7 @@ defmodule OscillEx.OscTest do
     test "creates message with mixed argument types" do
       assert {:ok, message} = Osc.message("/synth/note", [440, 0.8, "sine"])
       # Address padded + type tag ",ifs" padded + int 440 + float 0.8 + string "sine" padded
-      address_part = "/synth/note" <> <<0, 0, 0, 0, 0>>
+      address_part = "/synth/note" <> <<0>>
       type_tag_part = ",ifs" <> <<0, 0, 0, 0>>
       # 440 as big-endian 32-bit int
       int_part = <<0, 0, 1, 184>>
@@ -197,22 +197,13 @@ defmodule OscillEx.OscTest do
   end
 
   describe "edge cases" do
-    # FIXME: OSC-strings can't have unicode characters
-    @tag :skip
-    test "creates message with unicode characters in address" do
-      assert {:ok, message} = Osc.message("/tëst")
-      # Unicode characters should be preserved and properly padded
-      assert is_binary(message)
-      assert byte_size(message) > 0
+    test "unicode characters are not allowed in address" do
+      assert {:error, :invalid_address} == Osc.message("/tëst")
     end
 
-    # FIXME: this is a blob, which is not currently supported
-    @tag :skip
+    # TODO: this will be valid when supporting blobs
     test "creates message with unicode characters in string argument" do
-      assert {:ok, message} = Osc.message("/test", ["hëllö"])
-      # Unicode string should be preserved and properly padded
-      assert is_binary(message)
-      assert String.contains?(message, "hëllö")
+      assert {:error, {:invalid_string, "hëllö"}} = Osc.message("/test", ["hëllö"])
     end
 
     test "creates message with float zero" do
