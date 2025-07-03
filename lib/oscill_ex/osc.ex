@@ -3,6 +3,8 @@ defmodule OscillEx.Osc do
   Handles OSC message generation
   """
 
+  alias OscillEx.Osc.Parser
+
   def message(address, params \\ [])
 
   def message("/" <> _ = address, params) do
@@ -28,6 +30,8 @@ defmodule OscillEx.Osc do
   end
 
   def message(_address, _params), do: {:error, :invalid_address}
+
+  defdelegate parse(message), to: Parser
 
   @spec params_to_osc(list()) ::
           {:ok, String.t(), String.t()} | {:error, {:unsupported_type, term()}}

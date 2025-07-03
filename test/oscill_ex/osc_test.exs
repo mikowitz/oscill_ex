@@ -318,4 +318,220 @@ defmodule OscillEx.OscTest do
       assert {:error, _reason} = Osc.message("/test", nil)
     end
   end
+
+  describe "parse/1" do
+    test "parses message with no arguments" do
+      # Create a valid message first
+      {:ok, message} = Osc.message("/test")
+      assert {:ok, {"/test", []}} = Osc.parse(message)
+    end
+
+    test "parses message with integer argument" do
+      {:ok, message} = Osc.message("/test", [42])
+      assert {:ok, {"/test", [42]}} = Osc.parse(message)
+    end
+
+    test "parses message with float argument" do
+      {:ok, message} = Osc.message("/test", [3.14])
+      assert {:ok, {"/test", [pi_ish]}} = Osc.parse(message)
+
+      assert_in_delta(pi_ish, 3.14, 0.0001)
+    end
+
+    test "parses message with string argument" do
+      {:ok, message} = Osc.message("/test", ["hello"])
+      assert {:ok, {"/test", ["hello"]}} = Osc.parse(message)
+    end
+
+    test "parses message with blob argument" do
+      blob_data = <<0xFF, 0xFE, 0xFD, 0xFC>>
+      {:ok, message} = Osc.message("/test", [blob_data])
+      assert {:ok, {"/test", [^blob_data]}} = Osc.parse(message)
+    end
+
+    test "parses message with mixed argument types" do
+      {:ok, message} = Osc.message("/synth/note", [440, 0.8, "sine"])
+      assert {:ok, {"/synth/note", [440, n, "sine"]}} = Osc.parse(message)
+
+      assert_in_delta(n, 0.8, 0.0001)
+    end
+
+    test "parses message with empty string" do
+      {:ok, message} = Osc.message("/test", [""])
+      assert {:ok, {"/test", [""]}} = Osc.parse(message)
+    end
+
+    test "parses message with zero integer" do
+      {:ok, message} = Osc.message("/test", [0])
+      assert {:ok, {"/test", [0]}} = Osc.parse(message)
+    end
+
+    test "parses message with negative integer" do
+      {:ok, message} = Osc.message("/test", [-42])
+      assert {:ok, {"/test", [-42]}} = Osc.parse(message)
+    end
+
+    test "parses message with multiple arguments of same type" do
+      {:ok, message} = Osc.message("/test", [1, 2, 3, 4])
+      assert {:ok, {"/test", [1, 2, 3, 4]}} = Osc.parse(message)
+    end
+
+    test "parses message with empty blob" do
+      empty_blob = <<>>
+      {:ok, message} = Osc.message("/test", [empty_blob])
+      assert {:ok, {"/test", [^empty_blob]}} = Osc.parse(message)
+    end
+
+    test "parses message with large blob" do
+      large_blob = :crypto.strong_rand_bytes(100)
+      {:ok, message} = Osc.message("/test", [large_blob])
+      assert {:ok, {"/test", [^large_blob]}} = Osc.parse(message)
+    end
+  end
+
+  describe "parse/1 error cases" do
+    test "returns error for non-binary input" do
+      assert {:error, :invalid_message} = Osc.parse(123)
+      assert {:error, :invalid_message} = Osc.parse([1, 2, 3])
+      assert {:error, :invalid_message} = Osc.parse(%{})
+    end
+
+    test "returns error for empty binary" do
+      assert {:error, :invalid_message} = Osc.parse(<<>>)
+    end
+
+    test "returns error for too short message" do
+      # OSC messages must be at least 4 bytes (for address)
+      assert {:error, :invalid_message} = Osc.parse(<<1, 2, 3>>)
+    end
+
+    test "returns error for message without null-terminated address" do
+      # Address must be null-terminated
+      malformed = "/test"
+      assert {:error, :malformed_address} = Osc.parse(malformed)
+    end
+
+    test "returns error for address not starting with slash" do
+      malformed = "test" <> <<0, 0, 0>>
+      assert {:error, :malformed_address} = Osc.parse(malformed)
+    end
+
+    test "returns error for malformed type tag string" do
+      # Valid address but invalid type tag (not starting with comma)
+      malformed = "/test" <> <<0, 0, 0>> <> "xyz" <> <<0>>
+      assert {:error, :malformed_type_tag} = Osc.parse(malformed)
+    end
+
+    test "returns error for truncated message with arguments" do
+      # Address + type tag but missing argument data
+      malformed = "/test" <> <<0, 0, 0>> <> ",i" <> <<0, 0>>
+      assert {:error, :truncated_message} = Osc.parse(malformed)
+    end
+
+    test "returns error for unsupported type tag" do
+      # Valid structure but unsupported type tag 'x'
+      malformed = "/test" <> <<0, 0, 0>> <> ",x" <> <<0, 0>> <> <<1, 2, 3, 4>>
+      assert {:error, {:unsupported_type_tag, "x"}} = Osc.parse(malformed)
+    end
+
+    test "returns error for malformed integer argument" do
+      # Integer argument with only 3 bytes instead of 4
+      malformed = "/test" <> <<0, 0, 0>> <> ",i" <> <<0, 0>> <> <<1, 2, 3>>
+      assert {:error, :malformed_argument} = Osc.parse(malformed)
+    end
+
+    test "returns error for malformed float argument" do
+      # Float argument with only 3 bytes instead of 4
+      malformed = "/test" <> <<0, 0, 0>> <> ",f" <> <<0, 0>> <> <<1, 2, 3>>
+      assert {:error, :malformed_argument} = Osc.parse(malformed)
+    end
+
+    test "returns error for malformed string argument" do
+      # String argument without null termination
+      malformed = "/test" <> <<0, 0, 0>> <> ",s" <> <<0, 0>> <> "hello"
+      assert {:error, :malformed_argument} = Osc.parse(malformed)
+    end
+
+    test "returns error for malformed blob argument" do
+      # Blob without size header
+      malformed = "/test" <> <<0, 0, 0>> <> ",b" <> <<0, 0>> <> <<1, 2, 3, 4>>
+      assert {:error, :malformed_argument} = Osc.parse(malformed)
+    end
+
+    test "returns error for blob with incorrect size" do
+      # Blob claiming size 5 but only has 4 bytes of data
+      malformed = "/test" <> <<0, 0, 0>> <> ",b" <> <<0, 0>> <> <<0, 0, 0, 5>> <> <<1, 2, 3, 4>>
+      assert {:error, :malformed_argument} = Osc.parse(malformed)
+    end
+
+    test "returns error for non-printable characters in address" do
+      malformed = "/te\x01st" <> <<0, 0>>
+      assert {:error, :malformed_address} = Osc.parse(malformed)
+    end
+
+    test "returns error for misaligned padding" do
+      # Address not padded to 4-byte boundary
+      malformed = "/test" <> <<0, 0>> <> ",i" <> <<0, 0>> <> <<0, 0, 0, 42>>
+      assert {:error, :malformed_address} = Osc.parse(malformed)
+    end
+  end
+
+  describe "parse/1 edge cases" do
+    test "handles minimum valid message" do
+      {:ok, message} = Osc.message("/")
+      assert {:ok, {"/", []}} = Osc.parse(message)
+    end
+
+    test "handles very long address" do
+      long_address = "/" <> String.duplicate("a", 100)
+      {:ok, message} = Osc.message(long_address)
+      assert {:ok, {^long_address, []}} = Osc.parse(message)
+    end
+
+    test "handles maximum 32-bit integer values" do
+      max_int = 2_147_483_647
+      min_int = -2_147_483_648
+      {:ok, message} = Osc.message("/test", [max_int, min_int])
+      assert {:ok, {"/test", [^max_int, ^min_int]}} = Osc.parse(message)
+    end
+
+    test "handles special float values" do
+      {:ok, message} = Osc.message("/test", [0.0, -0.0])
+      assert {:ok, {"/test", [0.0, -0.0]}} = Osc.parse(message)
+    end
+
+    test "handles blob with null bytes" do
+      blob_with_nulls = <<0x48, 0x00, 0x65, 0x00, 0x6C, 0x00>>
+      {:ok, message} = Osc.message("/test", [blob_with_nulls])
+      assert {:ok, {"/test", [^blob_with_nulls]}} = Osc.parse(message)
+    end
+
+    test "handles unicode in blob data" do
+      unicode_blob = "hëllö"
+      {:ok, message} = Osc.message("/test", [unicode_blob])
+      assert {:ok, {"/test", [^unicode_blob]}} = Osc.parse(message)
+    end
+  end
+
+  describe "round-trip compatibility" do
+    test "message -> parse -> message produces identical results" do
+      test_cases = [
+        {"/test", []},
+        {"/synth", [440]},
+        {"/audio", ["sine"]},
+        {"/data", [<<0xFF, 0xFE, 0xFD>>]},
+        {"/mixed", [42, 1.5, "wave", <<0xCA, 0xFE>>]}
+      ]
+
+      for {address, args} <- test_cases do
+        {:ok, message1} = Osc.message(address, args)
+        {:ok, {parsed_address, parsed_args}} = Osc.parse(message1)
+        {:ok, message2} = Osc.message(parsed_address, parsed_args)
+
+        assert message1 == message2
+        assert address == parsed_address
+        assert args == parsed_args
+      end
+    end
+  end
 end
