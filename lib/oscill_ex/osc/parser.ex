@@ -57,16 +57,14 @@ defmodule OscillEx.Osc.Parser do
   defp parse_params(tags, message) do
     params =
       Enum.reduce_while(tags, {[], message}, fn tag, {params, rest} ->
-        {param, rest} = extract_param(tag, rest)
-
-        case param do
+        case extract_param(tag, rest) do
           {:error, _} = error -> {:halt, error}
-          _ -> {:cont, {[param | params], rest}}
+          {param, rest} -> {:cont, {[param | params], rest}}
         end
       end)
 
     case params do
-      {[:error], error} ->
+      {:error, error} ->
         {:error, error}
 
       {params, rest} ->
